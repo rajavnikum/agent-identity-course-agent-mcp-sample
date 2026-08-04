@@ -1,0 +1,61 @@
+{
+  "jessica@example.com": {
+    "displayName": "Jessica Smith",
+    "role": "employee",
+    "courses": [
+      {
+        "id": "SEC-101",
+        "title": "IBM Verify Fundamentals",
+        "category": "security",
+        "status": "enrolled"
+      },
+      {
+        "id": "CLD-201",
+        "title": "Cloud Security Foundations",
+        "category": "cloud",
+        "status": "enrolled"
+      }
+    ]
+  },
+  "john@example.com": {
+    "displayName": "John Patel",
+    "role": "employee",
+    "courses": [
+      {
+        "id": "PY-101",
+        "title": "Python Basics",
+        "category": "development",
+        "status": "enrolled"
+      }
+    ]
+  },
+  "alice@example.com": {
+    "displayName": "Alice Tan",
+    "role": "manager",
+    "courses": [
+      {
+        "id": "GOV-301",
+        "title": "Identity Governance for Managers",
+        "category": "governance",
+        "status": "enrolled"
+      }
+    ]
+  },
+  "catalog": [
+    {
+      "id": "SEC-301",
+      "title": "Advanced Security Operations",
+      "category": "security"
+    },
+    {
+      "id": "GEN-101",
+      "title": "AI Productivity Basics",
+      "category": "general"
+    },
+    {
+      "id": "GOV-301",
+      "title": "Identity Governance for Managers",
+      "category": "governance"
+    }
+  ]
+}

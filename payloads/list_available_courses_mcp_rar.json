@@ -1,0 +1,14 @@
+{
+  "type": "urn:ibm:demo:verify:agent_action",
+  "courseId": "ALL",
+  "operationDetails": {
+    "creator": "<actor-client-id>",
+    "affectedPerson": "scott",
+    "loggedInSubject": "scott",
+    "action": "list_available_courses",
+    "targetSystem": "course-mcp-server",
+    "resource": "mcp-tool",
+    "toolName": "list_available_courses",
+    "downstreamSystem": "course-api"
+  }
+}

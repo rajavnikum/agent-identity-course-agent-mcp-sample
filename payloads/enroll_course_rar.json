@@ -1,0 +1,19 @@
+[
+  {
+    "type": "urn:ibm:demo:verify:agent_action",
+    "ticketId": "UC1-DEMO",
+    "category": "course-assistant",
+    "riskLevel": "low",
+    "sourceSystem": "uc1-chat-ui",
+    "targetSystem": "course-api",
+    "operationDetails": {
+      "creator": "course-assistant-agent",
+      "affectedPerson": "jessica@example.com",
+      "idOwner": "jessica@example.com",
+      "action": "enroll_course",
+      "targetSystem": "course-api",
+      "resource": "courses",
+      "resourceId": "SEC-301"
+    }
+  }
+]

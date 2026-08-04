@@ -1,0 +1,7 @@
+{
+  "tool_name": "enroll_course",
+  "course_id": "SEC-301",
+  "requested_subject": "user@example.com",
+  "logged_in_subject": "user@example.com",
+  "delegated_token": "<delegated-access-token>"
+}

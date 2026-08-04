@@ -1,0 +1,156 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-07-14T00:00:00.000Z",
+  "__export_source": "IBM Verify UC2 cookbook",
+  "resources": [
+    {
+      "_id": "wrk_uc2_ucmcpruntime",
+      "parentId": null,
+      "modified": 0,
+      "created": 0,
+      "name": "UC2 MCP Runtime Diagnostics",
+      "description": "",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_wrk_uc2_ucmcpruntime",
+      "parentId": "wrk_uc2_ucmcpruntime",
+      "modified": 0,
+      "created": 0,
+      "name": "Base Environment",
+      "data": {
+        "local_app_url": "http://localhost:8000",
+        "tenant_url": "https://<tenant>",
+        "resource_client_id": "",
+        "resource_client_secret": "",
+        "delegated_access_token": "",
+        "logged_in_subject": "user@example.com"
+      },
+      "dataPropertyOrder": null,
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 0,
+      "_type": "environment"
+    },
+    {
+      "_id": "req_wrk_uc2_ucmcpruntime_1",
+      "parentId": "wrk_uc2_ucmcpruntime",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.local_app_url }}/health",
+      "name": "01 Application Health",
+      "description": "",
+      "method": "GET",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": ""
+      },
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucmcpruntime_2",
+      "parentId": "wrk_uc2_ucmcpruntime",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.local_app_url }}/mcp/tools",
+      "name": "02 MCP tools list",
+      "description": "",
+      "method": "GET",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": ""
+      },
+      "parameters": [],
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -2000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucmcpruntime_3",
+      "parentId": "wrk_uc2_ucmcpruntime",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.local_app_url }}/mcp/invoke",
+      "name": "03 MCP tools call",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"tool_name\": \"enroll_course\",\n  \"course_id\": \"SEC-301\",\n  \"requested_subject\": \"{{ _.logged_in_subject }}\",\n  \"logged_in_subject\": \"{{ _.logged_in_subject }}\",\n  \"delegated_token\": \"{{ _.delegated_access_token }}\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -3000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucmcpruntime_4",
+      "parentId": "wrk_uc2_ucmcpruntime",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/oauth2/introspect",
+      "name": "04 Introspect Delegated Token",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": "token={{ _.delegated_access_token }}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/x-www-form-urlencoded"
+        }
+      ],
+      "authentication": {
+        "type": "basic",
+        "username": "{{ _.resource_client_id }}",
+        "password": "{{ _.resource_client_secret }}"
+      },
+      "metaSortKey": -4000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    }
+  ]
+}

@@ -1,0 +1,339 @@
+{
+  "info": {
+    "name": "UC2 IBM Verify Setup - MCP Agent",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "tenant_url",
+      "value": "https://<tenant>"
+    },
+    {
+      "key": "admin_client_id",
+      "value": ""
+    },
+    {
+      "key": "admin_client_secret",
+      "value": ""
+    },
+    {
+      "key": "admin_access_token",
+      "value": ""
+    },
+    {
+      "key": "actor_client_id",
+      "value": ""
+    },
+    {
+      "key": "actor_client_secret",
+      "value": ""
+    },
+    {
+      "key": "actor_client_reference",
+      "value": ""
+    },
+    {
+      "key": "agent_id",
+      "value": ""
+    },
+    {
+      "key": "actor_scope",
+      "value": "agent.run"
+    },
+    {
+      "key": "resource_client_id",
+      "value": ""
+    },
+    {
+      "key": "resource_client_secret",
+      "value": ""
+    },
+    {
+      "key": "actor_access_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Get Admin Access Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "url": {
+          "raw": "{{tenant_url}}/oauth2/token",
+          "host": [
+            "{{tenant_url}}"
+          ],
+          "path": [
+            "oauth2",
+            "token"
+          ]
+        },
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "client_credentials",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{admin_client_id}}",
+              "type": "text"
+            },
+            {
+              "key": "client_secret",
+              "value": "{{admin_client_secret}}",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const j=pm.response.json(); if(j.access_token) pm.collectionVariables.set(\"admin_access_token\",j.access_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - DCR - Create UC2 Actor Client",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{tenant_url}}/oauth2/register",
+          "host": [
+            "{{tenant_url}}"
+          ],
+          "path": [
+            "oauth2",
+            "register"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_name\": \"UC2 Course MCP Conversational Agent\",\n  \"grant_types\": [\n    \"client_credentials\"\n  ],\n  \"scope\": \"agent.run\",\n  \"token_endpoint_auth_method\": \"client_secret_post\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const j=pm.response.json(); if(j.client_id) pm.collectionVariables.set(\"actor_client_id\",j.client_id); if(j.client_secret) pm.collectionVariables.set(\"actor_client_secret\",j.client_secret);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Create Agent and Associate Actor Client",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/scim+json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/scim+json"
+          }
+        ],
+        "url": {
+          "raw": "{{tenant_url}}/v1.0/Agents",
+          "host": [
+            "{{tenant_url}}"
+          ],
+          "path": [
+            "v1.0",
+            "Agents"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"schemas\": [\n    \"urn:ietf:params:scim:schemas:core:ibm:2.0:Agent\"\n  ],\n  \"displayName\": \"Course MCP Conversational Agent\",\n  \"description\": \"Conversational AI agent that invokes protected MCP course tools\",\n  \"oauthClients\": [\n    {\n      \"issuer\": \"{{actor_client_reference}}\",\n      \"clientId\": \"{{actor_client_id}}\",\n      \"purposes\": [\n        \"agent_id\",\n        \"authentication\"\n      ]\n    }\n  ],\n  \"permissions\": [],\n  \"status\": \"ACTIVE\",\n  \"tags\": [\n    \"course-agent\",\n    \"mcp-tools\",\n    \"conversational-ai\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const j=pm.response.json(); if(j.id) pm.collectionVariables.set(\"agent_id\",j.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Get Agent Details",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/scim+json"
+          }
+        ],
+        "url": {
+          "raw": "{{tenant_url}}/v1.0/Agents/{{agent_id}}",
+          "host": [
+            "{{tenant_url}}"
+          ],
+          "path": [
+            "v1.0",
+            "Agents",
+            "{{agent_id}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "05 - Get Actor Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "url": {
+          "raw": "{{tenant_url}}/oauth2/token",
+          "host": [
+            "{{tenant_url}}"
+          ],
+          "path": [
+            "oauth2",
+            "token"
+          ]
+        },
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "client_credentials",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{actor_client_id}}",
+              "type": "text"
+            },
+            {
+              "key": "client_secret",
+              "value": "{{actor_client_secret}}",
+              "type": "text"
+            },
+            {
+              "key": "scope",
+              "value": "{{actor_scope}}",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const j=pm.response.json(); if(j.access_token) pm.collectionVariables.set(\"actor_access_token\",j.access_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Introspect Actor Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "url": {
+          "raw": "{{tenant_url}}/oauth2/introspect",
+          "host": [
+            "{{tenant_url}}"
+          ],
+          "path": [
+            "oauth2",
+            "introspect"
+          ]
+        },
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "token",
+              "value": "{{actor_access_token}}",
+              "type": "text"
+            }
+          ]
+        },
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "{{resource_client_id}}",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "{{resource_client_secret}}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+httpx==0.28.1
+python-jose[cryptography]==3.3.0
+itsdangerous==2.2.0
+python-multipart==0.0.20
+google-genai==1.0.0
+mcp>=1.2.0,<2.0.0

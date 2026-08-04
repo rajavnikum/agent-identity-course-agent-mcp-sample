@@ -1,0 +1,242 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-07-14T00:00:00.000Z",
+  "__export_source": "IBM Verify UC2 cookbook",
+  "resources": [
+    {
+      "_id": "wrk_uc2_ucibmverifys",
+      "parentId": null,
+      "modified": 0,
+      "created": 0,
+      "name": "UC2 IBM Verify Setup",
+      "description": "",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_wrk_uc2_ucibmverifys",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "name": "Base Environment",
+      "data": {
+        "tenant_url": "https://<tenant>",
+        "admin_client_id": "",
+        "admin_client_secret": "",
+        "admin_access_token": "",
+        "actor_client_id": "",
+        "actor_client_secret": "",
+        "actor_client_reference": "",
+        "agent_id": "",
+        "actor_scope": "agent.run",
+        "resource_client_id": "",
+        "resource_client_secret": "",
+        "actor_access_token": ""
+      },
+      "dataPropertyOrder": null,
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 0,
+      "_type": "environment"
+    },
+    {
+      "_id": "req_wrk_uc2_ucibmverifys_1",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/oauth2/token",
+      "name": "01 Get Admin Access Token",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": "grant_type=client_credentials&client_id={{ _.admin_client_id }}&client_secret={{ _.admin_client_secret }}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/x-www-form-urlencoded"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucibmverifys_2",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/oauth2/register",
+      "name": "02 DCR Create UC2 Actor Client",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"client_name\": \"UC2 Course MCP Conversational Agent\",\n  \"grant_types\": [\n    \"client_credentials\"\n  ],\n  \"scope\": \"agent.run\",\n  \"token_endpoint_auth_method\": \"client_secret_post\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_access_token }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -2000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucibmverifys_3",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/v1.0/Agents",
+      "name": "03 Create Agent and Associate Actor Client",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"schemas\": [\n    \"urn:ietf:params:scim:schemas:core:ibm:2.0:Agent\"\n  ],\n  \"displayName\": \"Course MCP Conversational Agent\",\n  \"oauthClients\": [\n    {\n      \"issuer\": \"{{ _.actor_client_reference }}\",\n      \"clientId\": \"{{ _.actor_client_id }}\",\n      \"purposes\": [\n        \"agent_id\",\n        \"authentication\"\n      ]\n    }\n  ],\n  \"status\": \"ACTIVE\",\n  \"tags\": [\n    \"course-agent\",\n    \"mcp-tools\"\n  ]\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_access_token }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/scim+json"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -3000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucibmverifys_4",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/v1.0/Agents/{{ _.agent_id }}",
+      "name": "04 Get Agent Details",
+      "description": "",
+      "method": "GET",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": ""
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.admin_access_token }}"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -4000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucibmverifys_5",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/oauth2/token",
+      "name": "05 Get Actor Token",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": "grant_type=client_credentials&client_id={{ _.actor_client_id }}&client_secret={{ _.actor_client_secret }}&scope={{ _.actor_scope }}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/x-www-form-urlencoded"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -5000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_wrk_uc2_ucibmverifys_6",
+      "parentId": "wrk_uc2_ucibmverifys",
+      "modified": 0,
+      "created": 0,
+      "url": "{{ _.tenant_url }}/oauth2/introspect",
+      "name": "06 Introspect Actor Token",
+      "description": "",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/x-www-form-urlencoded",
+        "text": "token={{ _.actor_access_token }}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/x-www-form-urlencoded"
+        }
+      ],
+      "authentication": {
+        "type": "basic",
+        "username": "{{ _.resource_client_id }}",
+        "password": "{{ _.resource_client_secret }}"
+      },
+      "metaSortKey": -6000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    }
+  ]
+}

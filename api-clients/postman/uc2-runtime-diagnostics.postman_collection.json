@@ -1,0 +1,110 @@
+{
+  "info": {
+    "name": "UC2 MCP Runtime Diagnostics",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "local_app_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "tenant_url",
+      "value": "https://<tenant>"
+    },
+    {
+      "key": "resource_client_id",
+      "value": ""
+    },
+    {
+      "key": "resource_client_secret",
+      "value": ""
+    },
+    {
+      "key": "delegated_access_token",
+      "value": ""
+    },
+    {
+      "key": "logged_in_subject",
+      "value": "user@example.com"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Application Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{local_app_url}}/health"
+      }
+    },
+    {
+      "name": "02 - MCP tools/list through client",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{local_app_url}}/mcp/tools"
+      }
+    },
+    {
+      "name": "03 - MCP tools/call through client",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tool_name\": \"enroll_course\",\n  \"course_id\": \"SEC-301\",\n  \"requested_subject\": \"{{logged_in_subject}}\",\n  \"logged_in_subject\": \"{{logged_in_subject}}\",\n  \"delegated_token\": \"{{delegated_access_token}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{local_app_url}}/mcp/invoke"
+      }
+    },
+    {
+      "name": "04 - Introspect Delegated Token as MCP Resource",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "{{resource_client_id}}",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "{{resource_client_secret}}",
+              "type": "string"
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "token",
+              "value": "{{delegated_access_token}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": "{{tenant_url}}/oauth2/introspect"
+      }
+    }
+  ]
+}

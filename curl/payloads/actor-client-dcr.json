@@ -1,0 +1,8 @@
+{
+  "client_name": "UC2 Course MCP Conversational Agent",
+  "grant_types": [
+    "client_credentials"
+  ],
+  "scope": "agent.run",
+  "token_endpoint_auth_method": "client_secret_post"
+}

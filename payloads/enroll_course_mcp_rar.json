@@ -1,0 +1,14 @@
+{
+  "type": "urn:ibm:demo:verify:agent_action",
+  "courseId": "SEC-301",
+  "operationDetails": {
+    "creator": "<actor-client-id>",
+    "affectedPerson": "scott",
+    "loggedInSubject": "scott",
+    "action": "enroll_course",
+    "targetSystem": "course-mcp-server",
+    "resource": "mcp-tool",
+    "toolName": "enroll_course",
+    "downstreamSystem": "course-api"
+  }
+}

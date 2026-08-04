@@ -1,0 +1,24 @@
+{
+  "schemas": [
+    "urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"
+  ],
+  "displayName": "Course MCP Conversational Agent",
+  "description": "Conversational AI agent that invokes protected MCP course tools",
+  "oauthClients": [
+    {
+      "issuer": "${ACTOR_CLIENT_REFERENCE}",
+      "clientId": "${ACTOR_CLIENT_ID}",
+      "purposes": [
+        "agent_id",
+        "authentication"
+      ]
+    }
+  ],
+  "permissions": [],
+  "status": "ACTIVE",
+  "tags": [
+    "course-agent",
+    "mcp-tools",
+    "conversational-ai"
+  ]
+}

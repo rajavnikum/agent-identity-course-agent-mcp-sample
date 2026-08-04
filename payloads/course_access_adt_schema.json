@@ -1,0 +1,64 @@
+{
+  "description": "Generic Agent Action for IBM Verify AI Agent UC samples",
+  "type": "object",
+  "required": [
+    "type",
+    "operationDetails"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "const": "urn:ibm:demo:verify:agent_action"
+    },
+    "ticketId": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "riskLevel": {
+      "type": "string"
+    },
+    "sourceSystem": {
+      "type": "string"
+    },
+    "targetSystem": {
+      "type": "string"
+    },
+    "operationDetails": {
+      "type": "object",
+      "required": [
+        "creator",
+        "affectedPerson",
+        "idOwner",
+        "action",
+        "targetSystem",
+        "resource"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "creator": {
+          "type": "string"
+        },
+        "affectedPerson": {
+          "type": "string"
+        },
+        "idOwner": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "targetSystem": {
+          "type": "string"
+        },
+        "resource": {
+          "type": "string"
+        },
+        "resourceId": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
