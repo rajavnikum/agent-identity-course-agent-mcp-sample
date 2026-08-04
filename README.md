@@ -1,5 +1,9 @@
 # Onboard & Secure a Conversational AI Agent with MCP Tool Integration
 
+| ⚠️ EARLY ACCESS PREVIEW ⚠️ |
+| :--- |
+| Agent identity is under the Early Access Program (EAP) and for selected participants. Features and functionality are subject to change in the coming iterations. |
+
 This sample demonstrates how to onboard a conversational AI agent as a governed **agent identity in IBM Verify** and secure the agent when it invokes tools exposed by a **Model Context Protocol (MCP) server** on behalf of a signed-in human user.
 
 The example is a course assistant. A user signs in and asks:
