@@ -501,7 +501,9 @@ Create the OIDC application used by the browser chat.
 | Grant | Authorization Code |
 | PKCE | S256 / required |
 | Redirect URI | `http://localhost:8000/callback` |
-| Scopes | `openid profile email course.read course.enroll` |
+| OIDC scopes | `openid profile email` |
+| Subject access-token format | **JWT or opaque** |
+| ID token | Required; used to establish the logged-in Human User |
 
 Capture:
 
@@ -509,6 +511,28 @@ Capture:
 SUBJECT_CLIENT_ID=<subject client ID>
 SUBJECT_CLIENT_SECRET=<subject client secret>
 ```
+
+### Human identity comes from the ID token
+
+The browser login deliberately separates **identity** from the OAuth access token:
+
+```text
+Authorization Code + PKCE
+        |
+        +--> id_token      -> validate signature/audience/issuer/nonce -> Human User identity
+        |
+        +--> access_token  -> keep unchanged -> RFC 8693 subject_token
+```
+
+The application does **not** decode the subject access token to decide who logged in.
+Therefore the subject application works whether its access token is JWT-formatted or opaque.
+The access token is still sent to Token Exchange as:
+
+```text
+subject_token_type=urn:ietf:params:oauth:token-type:access_token
+```
+
+`verify_oauth.py` sends an OIDC `nonce` on the authorization request. `app.py` validates the returned `id_token` through `verify_id_token()` and stores only the access token plus validated ID-token claims in the browser session.
 
 
 
@@ -549,6 +573,16 @@ The actual `rar_builder.py` payload is shaped like:
 
 The schema included with this package matches these fields exactly.
 
+For this version, the ADT action and `toolName` enums contain four recognized intents:
+
+```text
+list_available_courses
+list_enrolled_courses
+enroll_course
+delete_course_history
+```
+
+`delete_course_history` is intentionally recognized only as a **negative authorization test**. It may reach Token Exchange so that the minimum delegated scope can be demonstrated, but the MCP server does not register a delete tool and therefore does not execute a delete operation.
 
 ### Why `toolName` matters
 
@@ -580,18 +614,61 @@ Tool discovery therefore does not grant permission to reuse a delegated token fo
 Configure an IBM Verify STS/token-exchange client for RFC 8693 token exchange.
 
 
-The sample sends:
+The application sends:
 
 ```text
 grant_type          = urn:ietf:params:oauth:grant-type:token-exchange
-subject_token        = human access token
+subject_token        = human access token (JWT or opaque)
 subject_token_type   = urn:ietf:params:oauth:token-type:access_token
 actor_token          = AI agent access token
 actor_token_type     = urn:ietf:params:oauth:token-type:access_token
-scope                 = mcp.tools.invoke course.read course.enroll
-audience              = course-mcp-server
+audience             = course-mcp-server
 authorization_details = MCP tool invocation context
 ```
+
+**There is no hard-coded `scope=` parameter in the Token Exchange request.** The delegated scopes are derived by IBM Verify from the authorization detail that is actually granted.
+
+Configure the STS authorization-details mapping with the following rule:
+
+```yaml
+statements:
+  - context: >
+      authzDetails := has(requestContext.authorization_details)
+      ? requestContext.authorization_details.map(x,
+          {
+            "purpose": x.type,
+            "attribute": x.operationDetails.resource,
+            "accessType": x.operationDetails.action,
+            "value": x.courseId,
+            "scope":
+              x.operationDetails.action == "list_available_courses"
+              ? "mcp.tools.invoke course.read"
+              : x.operationDetails.action == "list_enrolled_courses"
+                ? "mcp.tools.invoke course.read"
+                : x.operationDetails.action == "enroll_course"
+                  ? "mcp.tools.invoke course.enroll"
+                  : x.operationDetails.action == "delete_course_history"
+                    ? "mcp.tools.invoke"
+                    : "",
+            "tokenClaims": {
+              "authorization_details": [x]
+            }
+          })
+      : []
+
+  - return: context.authzDetails
+```
+
+This gives the delegated token exactly the authority associated with the approved action:
+
+| ADT action | Scope populated by STS |
+|---|---|
+| `list_available_courses` | `mcp.tools.invoke course.read` |
+| `list_enrolled_courses` | `mcp.tools.invoke course.read` |
+| `enroll_course` | `mcp.tools.invoke course.enroll` |
+| `delete_course_history` | `mcp.tools.invoke` only |
+
+The MCP protected-resource check independently requires both `mcp.tools.invoke` and the correct business scope for the three executable tools. No `course.delete` scope exists in this sample.
 
 Capture:
 
@@ -609,18 +686,16 @@ This sample asks IBM Verify to issue the delegated token for:
 course-mcp-server
 ```
 
-The MCP invocation scope is:
+The STS client must be configured to permit the scopes that the authorization-details mapping can produce:
 
 ```text
 mcp.tools.invoke
-```
-
-The requested business scopes are:
-
-```text
 course.read
 course.enroll
-.
+```
+
+The application does not request that broad set. The rule above chooses the minimum output scope for each granted ADT action.
+
 
 ## Step 7 — Configure the application
 
@@ -647,7 +722,7 @@ VERIFY_INTROSPECTION_ENDPOINT=https://<tenant>/oauth2/introspect
 SUBJECT_CLIENT_ID=<subject-client-id>
 SUBJECT_CLIENT_SECRET=<subject-client-secret>
 SUBJECT_REDIRECT_URI=http://localhost:8000/callback
-SUBJECT_SCOPES=openid profile email course.read course.enroll
+SUBJECT_SCOPES=openid profile email
 
 ACTOR_CLIENT_ID=<dcr-created-actor-client-id>
 ACTOR_CLIENT_SECRET=<dcr-created-actor-client-secret>
@@ -655,7 +730,6 @@ ACTOR_SCOPES=agent.run
 
 STS_CLIENT_ID=<sts-client-id>
 STS_CLIENT_SECRET=<sts-client-secret>
-STS_REQUESTED_SCOPE=mcp.tools.invoke course.read course.enroll
 STS_AUDIENCE=course-mcp-server
 
 MCP_AUDIENCE=course-mcp-server
@@ -684,10 +758,11 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-pip install pyJWT jinja2
 
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
+
+The ID-token change touches `app.py`, `verify_oauth.py`, and `token_utils.py`. `requirements.txt` now explicitly includes PyJWT because `verify_id_token()` validates the ID-token signature with the tenant JWKS.
 
 Open:
 
@@ -805,21 +880,43 @@ Expected tool:
 list_enrolled_courses
 ```
 
-### Test D — Attempt cross-user access
+### Test D — Named-user lookup and cross-user protection
 
 Prompt:
 
 ```text
-Show Rick's enrolled courses.
+Can you show John's courses?
 ```
 
-Expected result:
+The behavior is intentionally different depending on authentication and directory state:
+
+| Situation | Expected behavior |
+|---|---|
+| No Human User is logged in | HTTP `401`; no intent processing, user lookup, Token Exchange, or course data is shown |
+| Logged in, but John does not exist or lookup is ambiguous | `USER_RESOLUTION_FAILED`; Token Exchange is not performed |
+| Logged in as another user and John exists | John can be resolved, but the MCP cross-user policy denies the course-data request |
+| Logged in as John and John resolves to the logged-in subject | The normal `list_enrolled_courses` authorization path can proceed |
+
+This distinction is important: **directory existence is not authorization**. Finding John in IBM Verify never gives another logged-in user permission to see John's courses.
+
+To test named-user resolution, configure `VERIFY_MANAGEMENT_CLIENT_ID` and `VERIFY_MANAGEMENT_CLIENT_SECRET` with permission to read IBM Verify Directory users.
+
+### Test E — Delete is recognized but not executable
+
+Prompt:
 
 ```text
-DENIED
+Please delete my course history.
 ```
 
-The MCP server-side validation checks the requested and logged-in subject context before the tool operation executes.
+Expected authorization context:
+
+```text
+action = delete_course_history
+delegated scope = mcp.tools.invoke
+```
+
+No `course.read`, `course.enroll`, or `course.delete` scope is added. The request is then denied at the MCP boundary because `delete_course_history` is **not an exposed MCP tool**. This demonstrates that recognizing an intent and receiving a narrowly scoped delegated token still does not create a tool capability that the MCP server has not published.
 
 ## MCP tool registration and invocation
 
@@ -1316,15 +1413,18 @@ MCP_AUDIENCE=course-mcp-server
 MCP_SERVER_NAME=course-mcp-server
 ```
 
-### `mcp.tools.invoke` missing
+### Delegated scope is missing or too broad
 
-Check:
+Do not restore a broad `STS_REQUESTED_SCOPE`. This version intentionally omits `scope` from the Token Exchange request.
 
-```dotenv
-STS_REQUESTED_SCOPE=mcp.tools.invoke course.read course.enroll
+Check the STS authorization-details mapping rule and confirm the delegated token contains exactly:
+
+```text
+list_available_courses -> mcp.tools.invoke course.read
+list_enrolled_courses  -> mcp.tools.invoke course.read
+enroll_course          -> mcp.tools.invoke course.enroll
+delete_course_history  -> mcp.tools.invoke
 ```
-
-and the IBM Verify STS policy/configuration that grants requested scopes.
 
 ### Actor token fails
 

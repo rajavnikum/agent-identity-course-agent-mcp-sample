@@ -30,9 +30,11 @@ def create_pkce_pair():
 
 def build_login_url(request: Request) -> str:
     state = secrets.token_urlsafe(24)
+    nonce = secrets.token_urlsafe(24)
     code_verifier, code_challenge = create_pkce_pair()
 
     request.session["oauth_state"] = state
+    request.session["oauth_nonce"] = nonce
     request.session["code_verifier"] = code_verifier
 
     params = {
@@ -41,6 +43,7 @@ def build_login_url(request: Request) -> str:
         "scope": settings.subject_scopes,
         "redirect_uri": settings.subject_redirect_uri,
         "state": state,
+        "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
@@ -78,9 +81,9 @@ async def exchange_auth_code(request: Request, code: str, state: str) -> dict:
             f"Subject token exchange failed: {response.status_code} {response.text}"
         )
 
-    tokens = response.json()
-    request.session["subject_tokens"] = tokens
-    return tokens
+    # Do not store the complete token response in the cookie-backed session here.
+    # app.py validates the id_token and stores only the access token + ID-token claims.
+    return response.json()
 
 
 async def get_actor_token() -> dict:
@@ -122,17 +125,13 @@ async def token_exchange(
         "authorization_details": json.dumps(authorization_details),
     }
 
-    if settings.sts_requested_scope:
-        data["scope"] = settings.sts_requested_scope
+    # Intentionally do NOT send a hard-coded broad scope request here.
+    # IBM Verify derives the delegated scope from the granted authorization detail
+    # using the STS authorization-details mapping rule documented in README.md.
 
-    # IBM Verify tenants may support one or multiple audience values depending on configuration.
-    # For UC2 basic demo, this is normally one value: course-mcp-server.
     audiences = settings.sts_audiences
     if len(audiences) == 1:
         data["audience"] = audiences[0]
-    elif len(audiences) > 1:
-        # Send as repeated form parameter by using a list of tuples below.
-        pass
 
     print("\n===== TOKEN EXCHANGE REQUEST =====")
     safe_data = dict(data)

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
 from config import settings
-from token_utils import decode_unverified
+from token_utils import decode_unverified, verify_id_token
 from rar_builder import build_agent_authorization_details
 from verify_oauth import (
     build_login_url,
@@ -33,10 +33,14 @@ app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 templates = Jinja2Templates(directory="templates")
 
 
+# delete_course_history is deliberately allowed through intent classification and
+# Token Exchange as a negative authorization test. The MCP server does NOT expose
+# a delete tool, so the request must stop at the MCP tool boundary.
 ALLOWED_ACTIONS = {
     "list_available_courses",
     "enroll_course",
     "list_enrolled_courses",
+    "delete_course_history",
 }
 
 
@@ -61,20 +65,34 @@ async def resolve_target_subject(
     logged_in_subject: str,
 ) -> tuple[str, dict | None, str]:
     """
-    Resolves target subject without hardcoding users.
-    - self/me/my/logged-in username => logged-in user
-    - any other hint => IBM Verify Directory SCIM lookup
+    Resolve the target subject without hardcoding users.
+
+    - self/me/my/logged-in username -> logged-in user
+    - another name such as John -> IBM Verify Directory lookup
+
+    A named user may exist in the directory and still be denied later by MCP if
+    that user is not the currently logged-in subject.
     """
     if is_self_reference(llm_target_subject, logged_in_subject):
         return logged_in_subject, None, "logged_in_subject"
 
-    user_hint = llm_target_subject.strip()
+    user_hint = (llm_target_subject or "").strip()
+    if not user_hint:
+        return logged_in_subject, None, "logged_in_subject"
+
     resolved_user = await find_verify_user(user_hint)
 
     if not resolved_user:
-        raise ValueError(f"No unique IBM Verify user found for hint: {user_hint}")
+        raise ValueError(
+            f"No unique IBM Verify user found for hint: {user_hint}. "
+            "Use an existing IBM Verify userName, email, or unambiguous name."
+        )
 
-    resolved_subject = resolved_user.get("userName") or resolved_user.get("displayName") or resolved_user.get("id")
+    resolved_subject = (
+        resolved_user.get("userName")
+        or resolved_user.get("displayName")
+        or resolved_user.get("id")
+    )
     if not resolved_subject:
         raise ValueError(f"IBM Verify user found but no usable username/id for hint: {user_hint}")
 
@@ -84,17 +102,19 @@ async def resolve_target_subject(
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     subject_tokens = request.session.get("subject_tokens")
-    claims = {}
-
-    if subject_tokens and subject_tokens.get("access_token"):
-        claims = decode_unverified(subject_tokens["access_token"])
+    subject_identity = request.session.get("subject_identity") or {}
 
     return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "logged_in": subject_tokens is not None,
-            "claims": claims,
+        request=request,
+        name="index.html",
+        context={
+            "logged_in": bool(
+                subject_tokens
+                and subject_tokens.get("access_token")
+                and subject_identity
+            ),
+            # UI identity is always taken from validated ID-token claims.
+            "claims": subject_identity,
             "llm_enabled": settings.use_llm,
             "gemini_model": settings.gemini_model,
             "uc_mode": "UC2 - MCP mediated tool access",
@@ -124,13 +144,44 @@ async def callback(
 
     try:
         tokens = await exchange_auth_code(request, code, state)
-        request.session["subject_tokens"] = tokens
+
+        id_token = tokens.get("id_token")
+        if not id_token:
+            raise ValueError("IBM Verify token response did not contain an id_token")
+
+        expected_nonce = request.session.get("oauth_nonce")
+        if not expected_nonce:
+            raise ValueError("Missing OIDC nonce in session")
+
+        id_claims = verify_id_token(
+            id_token,
+            expected_nonce=expected_nonce,
+        )
+
+        access_token = tokens.get("access_token")
+        if not access_token:
+            raise ValueError("IBM Verify token response did not contain an access_token")
+
+        # Identity and OAuth authority are kept separate:
+        #   - ID token claims establish the logged-in human identity.
+        #   - Access token is kept unchanged and used only as RFC 8693 subject_token.
+        # This works whether the subject access token itself is JWT-formatted or opaque.
+        request.session["subject_tokens"] = {
+            "access_token": access_token,
+        }
+        request.session["subject_identity"] = id_claims
+
+        request.session.pop("oauth_state", None)
+        request.session.pop("oauth_nonce", None)
+        request.session.pop("code_verifier", None)
+
         return RedirectResponse("/")
+
     except Exception as exc:
         traceback.print_exc()
         return JSONResponse(
             status_code=500,
-            content={"error": "Callback token exchange failed", "details": str(exc)},
+            content={"error": "Callback processing failed", "details": str(exc)},
         )
 
 
@@ -180,6 +231,9 @@ def build_answer(last_result: dict) -> str:
 
         return "Request completed successfully."
 
+    if last_result.get("status") == "USER_RESOLUTION_FAILED":
+        return last_result.get("error") or "IBM Verify user resolution failed."
+
     return (
         last_result.get("error")
         or last_result.get("mcp_result", {}).get("reason")
@@ -190,13 +244,11 @@ def build_answer(last_result: dict) -> str:
 
 @app.get("/mcp/tools")
 async def mcp_tools():
-    """Discover tools from the MCP server through the MCP client."""
     return await list_mcp_tools()
 
 
 @app.post("/mcp/invoke")
 async def mcp_invoke(payload: MCPInvokeRequest):
-    """MCP-style tool invocation endpoint. Chat flow calls the same logic in process."""
     result = await call_mcp_tool(
         delegated_token=payload.delegated_token,
         tool_name=payload.tool_name,
@@ -210,60 +262,102 @@ async def mcp_invoke(payload: MCPInvokeRequest):
 @app.post("/chat")
 async def chat(request: Request, message: str = Form(...)):
     subject_tokens = request.session.get("subject_tokens")
+    id_claims = request.session.get("subject_identity") or {}
 
-    if not subject_tokens or not subject_tokens.get("access_token"):
-        return JSONResponse(status_code=401, content={"error": "Not logged in. Please login with IBM Verify first."})
+    # No login means no intent processing, no directory lookup, no actor token,
+    # and no Token Exchange. In particular, "show John's courses" cannot reveal
+    # whether John exists unless the caller first authenticates.
+    if (
+        not subject_tokens
+        or not subject_tokens.get("access_token")
+        or not id_claims
+    ):
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Not logged in. Please login with IBM Verify first."},
+        )
 
+    # The access token is NOT decoded to discover who logged in. It may be JWT or
+    # opaque. It is used only as the subject_token during Token Exchange.
     subject_token = subject_tokens["access_token"]
-    subject_claims = decode_unverified(subject_token)
 
-    if subject_claims.get("exp") and int(subject_claims["exp"]) < int(time.time()):
+    if id_claims.get("exp") and int(id_claims["exp"]) < int(time.time()):
         request.session.clear()
-        return JSONResponse(status_code=401, content={"error": "Subject token expired. Please login again with IBM Verify."})
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Login session expired. Please login again with IBM Verify."},
+        )
 
     logged_in_subject = (
-        subject_claims.get("preferred_username")
-        or subject_claims.get("email")
-        or subject_claims.get("sub")
+        id_claims.get("preferred_username")
+        or id_claims.get("email")
+        or id_claims.get("sub")
         or "unknown-user"
     )
 
     try:
         decision = decide_action(message)
+    except Exception as exc:
+        traceback.print_exc()
+        last_result = {
+            "status": "INTENT_CLASSIFICATION_FAILED",
+            "user_message": message,
+            "logged_in_subject": logged_in_subject,
+            "error": f"Intent classification failed: {str(exc)}",
+        }
+        return JSONResponse({"answer": build_answer(last_result), "diagnostic": last_result})
 
-        action = decision.action
-        course_id = decision.course_id or "ALL"
-        llm_target_subject = decision.target_subject or "self"
+    action = decision.action
+    course_id = decision.course_id or "ALL"
+    llm_target_subject = decision.target_subject or "self"
 
-        if action not in ALLOWED_ACTIONS:
-            raise ValueError(f"Unsupported action from intent classifier: {action}")
+    if action not in ALLOWED_ACTIONS:
+        last_result = {
+            "status": "INTENT_CLASSIFICATION_FAILED",
+            "user_message": message,
+            "logged_in_subject": logged_in_subject,
+            "action": action,
+            "error": f"Unsupported action from intent classifier: {action}",
+        }
+        return JSONResponse({"answer": build_answer(last_result), "diagnostic": last_result})
 
+    intent = {
+        "action": action,
+        "course_id": course_id,
+        "llm_target_subject": llm_target_subject,
+        "reason": decision.reason,
+    }
+
+    # Named users are resolved only after login. If John does not exist (or the
+    # lookup is ambiguous), the flow stops here before Token Exchange. If John does
+    # exist but another person is logged in, the later MCP cross-user policy denies
+    # access to John's course data.
+    try:
         target_subject, resolved_verify_user, target_resolution_source = await resolve_target_subject(
             llm_target_subject=llm_target_subject,
             logged_in_subject=logged_in_subject,
         )
-
-        intent = {
-            "action": action,
-            "course_id": course_id,
-            "llm_target_subject": llm_target_subject,
-            "target_subject": target_subject,
-            "target_resolution_source": target_resolution_source,
-            "resolved_verify_user": resolved_verify_user,
-            "reason": decision.reason,
-        }
-
     except Exception as exc:
         traceback.print_exc()
         last_result = {
-            "status": "DENIED_OR_FAILED",
+            "status": "USER_RESOLUTION_FAILED",
             "user_message": message,
-            "llm_enabled": settings.use_llm,
-            "llm_model": settings.gemini_model if settings.use_llm else "deterministic-fallback",
+            "llm_intent": intent,
             "logged_in_subject": logged_in_subject,
-            "error": f"Intent classification or IBM Verify user resolution failed: {str(exc)}",
+            "user_resolution_performed": True,
+            "token_exchange_performed": False,
+            "mcp_called": False,
+            "error": f"IBM Verify user resolution failed for '{llm_target_subject}': {str(exc)}",
         }
         return JSONResponse({"answer": build_answer(last_result), "diagnostic": last_result})
+
+    intent.update(
+        {
+            "target_subject": target_subject,
+            "target_resolution_source": target_resolution_source,
+            "resolved_verify_user": resolved_verify_user,
+        }
+    )
 
     authorization_details = [
         build_agent_authorization_details(
@@ -279,6 +373,9 @@ async def chat(request: Request, message: str = Form(...)):
         )
     ]
 
+    actor_token = None
+    delegated_token = None
+
     try:
         actor_tokens = await get_actor_token()
         actor_token = actor_tokens["access_token"]
@@ -291,6 +388,9 @@ async def chat(request: Request, message: str = Form(...)):
 
         delegated_token = exchanged_tokens["access_token"]
 
+        # delete_course_history intentionally reaches this point so the delegated
+        # token can demonstrate the STS-derived minimum scope. The MCP client then
+        # denies it because the MCP server does not expose a delete tool.
         mcp_result = await call_mcp_tool(
             delegated_token=delegated_token,
             tool_name=action,
@@ -311,7 +411,7 @@ async def chat(request: Request, message: str = Form(...)):
             "mcp_server": settings.mcp_server_name,
             "mcp_tool": action,
             "authorization_details": authorization_details,
-            "subject_claims": subject_claims,
+            "id_token_claims": id_claims,
             "actor_token_claims": decode_unverified(actor_token),
             "delegated_token_claims": decode_unverified(delegated_token),
             "mcp_result": mcp_result,
@@ -331,6 +431,9 @@ async def chat(request: Request, message: str = Form(...)):
             "mcp_server": settings.mcp_server_name,
             "mcp_tool": action,
             "authorization_details": authorization_details,
+            "id_token_claims": id_claims,
+            "actor_token_claims": decode_unverified(actor_token) if actor_token else None,
+            "delegated_token_claims": decode_unverified(delegated_token) if delegated_token else None,
             "error": str(exc),
         }
 

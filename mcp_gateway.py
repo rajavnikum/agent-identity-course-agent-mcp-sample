@@ -49,10 +49,14 @@ TOOL_DEFINITIONS = [
 
 
 ACTION_SCOPE_MAP = {
-    "list_available_courses": "mcp.tools.invoke",
-    "list_enrolled_courses": "mcp.tools.invoke",
-    "enroll_course": "mcp.tools.invoke",
+    "list_available_courses": {"mcp.tools.invoke", "course.read"},
+    "list_enrolled_courses": {"mcp.tools.invoke", "course.read"},
+    "enroll_course": {"mcp.tools.invoke", "course.enroll"},
 }
+
+# delete_course_history is intentionally NOT exposed as an MCP tool.
+# Its ADT mapping grants only mcp.tools.invoke, and mcp_client.py denies the
+# invocation because tools/list does not contain a delete tool.
 
 
 def _mcp_log(title: str, data: Dict[str, Any] | None = None) -> None:
@@ -205,22 +209,26 @@ def _validate_mcp_invocation(
             ),
         }
 
-    required_scope = ACTION_SCOPE_MAP.get(tool_name)
+    required_scopes = ACTION_SCOPE_MAP.get(tool_name)
 
-    if not required_scope:
+    if not required_scopes:
         return {
             "valid": False,
             "stage": "tool",
             "reason": f"Unsupported MCP tool: {tool_name}",
         }
 
-    scopes = _scope_list(claims)
+    scopes = set(_scope_list(claims))
+    missing_scopes = sorted(required_scopes - scopes)
 
-    if required_scope not in scopes:
+    if missing_scopes:
         return {
             "valid": False,
             "stage": "scope",
-            "reason": f"Missing required MCP scope: {required_scope}. Token scopes={scopes}",
+            "reason": (
+                f"Missing required scope(s) for {tool_name}: {missing_scopes}. "
+                f"Token scopes={sorted(scopes)}"
+            ),
         }
 
     auth_detail = _find_auth_detail(claims)
