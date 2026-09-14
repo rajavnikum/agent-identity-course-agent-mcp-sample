@@ -248,7 +248,6 @@ the runtime flow is:
 
 ```text
 1. Browser -> app.py /chat
-
 2. app.py -> llm_agent.decide_action(message)
 
    AgentDecision(
@@ -256,9 +255,7 @@ the runtime flow is:
        course_id="SEC-301",
        target_subject="self"
    )
-
 3. app.py -> resolve_target_subject(...)
-
 4. app.py -> rar_builder.build_agent_authorization_details(...)
 
    action           = enroll_course
@@ -266,66 +263,43 @@ the runtime flow is:
    targetSystem     = course-mcp-server
    resource         = mcp-tool
    downstreamSystem = course-api
-
 5. app.py -> verify_oauth.get_actor_token()
 
    POST /oauth2/token
    grant_type=client_credentials
-
 6. app.py -> verify_oauth.token_exchange(...)
 
    subject_token        = human
    actor_token          = registered agent
    audience             = course-mcp-server
    authorization_details= MCP tool context
-
 7. IBM Verify -> delegated access token
-
 8. app.py -> mcp_client.call_mcp_tool(
        tool_name="enroll_course",
        delegated_token=<token>,
        course_id="SEC-301",
        ...
    )
-
 9. mcp_client.py -> ClientSession.initialize()
-
 10. mcp_client.py -> session.list_tools()
 
     MCP operation: tools/list
-
 11. mcp_client.py confirms enroll_course is exposed
-
 12. mcp_client.py -> session.call_tool(
         "enroll_course",
         arguments
     )
 
     MCP operation: tools/call
-
 13. mcp_server.py receives the MCP tool invocation
-
 14. @mcp.tool() enroll_course(...) runs
-
 15. mcp_server.py -> mcp_gateway.invoke_mcp_tool(...)
-
 16. mcp_gateway.py validates:
 
-    audience
-    actor
-    scope
-    authorization_details
-    targetSystem
-    resource
-    downstreamSystem
-    action
-    toolName
-    affectedPerson
-    loggedInSubject
-    cross-user policy
+    audience,actor,scope,authorization_details,targetSystem,resource,downstreamSystem,action,toolName,
+    affectedPerson,loggedInSubject
 
 17. Only after validation passes is enrollment executed
-
 18. MCP tool result -> MCP Client -> app.py -> human
 ```
 
