@@ -385,9 +385,18 @@ You also need:
 
 ## Step 1 — Create an IBM Verify administrative API client
 
-Create an IBM Verify administrative/API client with the minimum entitlements required to perform the setup operations used in your tenant.
+Configure the API client with the following entitlements:
 
-For bearer-protected DCR, IBM Verify documents the dynamic-client management entitlement required by the registration API.
+| **Entitlement** | **API entitlement** | **Why it is required** |
+|---|---|---|
+| **Configure AI agents** | `writeAgents` | Required to create and update the Agent Registry record used by this sample. |
+| **Manage AI agents** | `manageAgentStatus`| Review and manage AI agent status |
+| **Manage OIDC client registration dynamically** | `manageOidcDynamicClient` | Required to create the agent OAuth client through Dynamic Client Registration when DCR requires bearer-token authentication. |
+| **Manage authorization detail types** | `manageAuthDetailTypes` | Create and manage the Authorization Details Type used by this sample. |
+| **Read Users** | `readUsers` | Read all users but not group memberships. |
+
+
+Do not select unrelated administrative entitlements. They are not required by this sample.
 
 Capture:
 
