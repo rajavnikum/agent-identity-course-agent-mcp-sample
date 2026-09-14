@@ -238,7 +238,7 @@ Delegated token: aud = course-mcp-server
 
 ## Runtime flow
 
-![Runtime MCP tool agent flow](images/mcp-tools-agent-runtime-flow)
+![Runtime MCP tool agent flow](images/mcp-tools-agent-runtime-flow.png)
 
 ## Project structure
 
