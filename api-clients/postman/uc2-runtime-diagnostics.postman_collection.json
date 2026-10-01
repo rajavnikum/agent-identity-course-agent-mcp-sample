@@ -27,6 +27,42 @@
     {
       "key": "logged_in_subject",
       "value": "user@example.com"
+    },
+    {
+      "key": "subject_access_token",
+      "value": ""
+    },
+    {
+      "key": "actor_access_token",
+      "value": ""
+    },
+    {
+      "key": "sts_client_id",
+      "value": ""
+    },
+    {
+      "key": "sts_client_secret",
+      "value": ""
+    },
+    {
+      "key": "subject_resource_client_id",
+      "value": ""
+    },
+    {
+      "key": "subject_resource_client_secret",
+      "value": ""
+    },
+    {
+      "key": "course_id",
+      "value": "SEC-301"
+    },
+    {
+      "key": "tool_name",
+      "value": "enroll_course"
+    },
+    {
+      "key": "actor_client_id",
+      "value": ""
     }
   ],
   "item": [
@@ -58,7 +94,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"tool_name\": \"enroll_course\",\n  \"course_id\": \"SEC-301\",\n  \"requested_subject\": \"{{logged_in_subject}}\",\n  \"logged_in_subject\": \"{{logged_in_subject}}\",\n  \"delegated_token\": \"{{delegated_access_token}}\"\n}",
+          "raw": "{\n  \"tool_name\": \"{{tool_name}}\",\n  \"course_id\": \"{{course_id}}\",\n  \"requested_subject\": \"{{logged_in_subject}}\",\n  \"logged_in_subject\": \"{{logged_in_subject}}\",\n  \"delegated_token\": \"{{delegated_access_token}}\"\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -105,6 +141,225 @@
         },
         "url": "{{tenant_url}}/oauth2/introspect"
       }
+    },
+    {
+      "name": "05 - Token Exchange for Selected MCP Tool",
+      "request": {
+        "method": "POST",
+        "url": "{{tenant_url}}/oauth2/token",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "urn:ietf:params:oauth:grant-type:token-exchange",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{sts_client_id}}",
+              "type": "text"
+            },
+            {
+              "key": "client_secret",
+              "value": "{{sts_client_secret}}",
+              "type": "text"
+            },
+            {
+              "key": "subject_token",
+              "value": "{{subject_access_token}}",
+              "type": "text"
+            },
+            {
+              "key": "subject_token_type",
+              "value": "urn:ietf:params:oauth:token-type:access_token",
+              "type": "text"
+            },
+            {
+              "key": "actor_token",
+              "value": "{{actor_access_token}}",
+              "type": "text"
+            },
+            {
+              "key": "actor_token_type",
+              "value": "urn:ietf:params:oauth:token-type:access_token",
+              "type": "text"
+            },
+            {
+              "key": "audience",
+              "value": "course-mcp-server",
+              "type": "text"
+            },
+            {
+              "key": "authorization_details",
+              "value": "[{\"type\": \"urn:ibm:demo:verify:agent_action\", \"courseId\": \"{{course_id}}\", \"operationDetails\": {\"creator\": \"{{actor_client_id}}\", \"affectedPerson\": \"{{logged_in_subject}}\", \"loggedInSubject\": \"{{logged_in_subject}}\", \"action\": \"{{tool_name}}\", \"targetSystem\": \"course-mcp-server\", \"resource\": \"mcp-tool\", \"toolName\": \"{{tool_name}}\", \"downstreamSystem\": \"course-api\"}}]",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) { const v=pm.response.json().access_token; if(v) pm.collectionVariables.set(\"delegated_access_token\", v); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Introspect Subject Token and may_act",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "basic",
+          "basic": [
+            {
+              "key": "username",
+              "value": "{{subject_resource_client_id}}",
+              "type": "string"
+            },
+            {
+              "key": "password",
+              "value": "{{subject_resource_client_secret}}",
+              "type": "string"
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "token",
+              "value": "{{subject_access_token}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": "{{tenant_url}}/oauth2/introspect"
+      }
+    },
+    {
+      "name": "07 - Token Exchange for Delete - No Delete Scope",
+      "request": {
+        "method": "POST",
+        "url": "{{tenant_url}}/oauth2/token",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "grant_type",
+              "value": "urn:ietf:params:oauth:grant-type:token-exchange",
+              "type": "text"
+            },
+            {
+              "key": "client_id",
+              "value": "{{sts_client_id}}",
+              "type": "text"
+            },
+            {
+              "key": "client_secret",
+              "value": "{{sts_client_secret}}",
+              "type": "text"
+            },
+            {
+              "key": "subject_token",
+              "value": "{{subject_access_token}}",
+              "type": "text"
+            },
+            {
+              "key": "subject_token_type",
+              "value": "urn:ietf:params:oauth:token-type:access_token",
+              "type": "text"
+            },
+            {
+              "key": "actor_token",
+              "value": "{{actor_access_token}}",
+              "type": "text"
+            },
+            {
+              "key": "actor_token_type",
+              "value": "urn:ietf:params:oauth:token-type:access_token",
+              "type": "text"
+            },
+            {
+              "key": "audience",
+              "value": "course-mcp-server",
+              "type": "text"
+            },
+            {
+              "key": "authorization_details",
+              "value": "[{\"type\": \"urn:ibm:demo:verify:agent_action\", \"courseId\": \"ALL\", \"operationDetails\": {\"creator\": \"{{actor_client_id}}\", \"affectedPerson\": \"{{logged_in_subject}}\", \"loggedInSubject\": \"{{logged_in_subject}}\", \"action\": \"delete_course_history\", \"targetSystem\": \"course-mcp-server\", \"resource\": \"mcp-tool\", \"toolName\": \"delete_course_history\", \"downstreamSystem\": \"course-api\"}}]",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) { const v=pm.response.json().access_token; if(v) pm.collectionVariables.set(\"delegated_access_token\", v); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - Invoke Delete - Expect Scope Denial",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tool_name\": \"delete_course_history\",\n  \"course_id\": \"ALL\",\n  \"requested_subject\": \"{{logged_in_subject}}\",\n  \"logged_in_subject\": \"{{logged_in_subject}}\",\n  \"delegated_token\": \"{{delegated_access_token}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{local_app_url}}/mcp/invoke"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Delete denied by required scope\", function () { pm.response.to.have.status(403); const result = pm.response.json(); pm.expect(result.denied_stage).to.eql(\"scope\"); pm.expect(result.reason).to.include(\"course.delete\"); });"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

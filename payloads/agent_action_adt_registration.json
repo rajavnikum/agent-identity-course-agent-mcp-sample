@@ -1,0 +1,10 @@
+{
+  "type": "urn:ibm:demo:verify:agent_action",
+  "schema": "{\"description\": \"Agent action authorization details for the IBM Verify conversational AI MCP tools sample\", \"type\": \"object\", \"required\": [\"type\", \"courseId\", \"operationDetails\"], \"additionalProperties\": false, \"properties\": {\"type\": {\"type\": \"string\", \"const\": \"urn:ibm:demo:verify:agent_action\"}, \"courseId\": {\"type\": \"string\"}, \"operationDetails\": {\"type\": \"object\", \"required\": [\"creator\", \"affectedPerson\", \"loggedInSubject\", \"action\", \"targetSystem\", \"resource\", \"toolName\", \"downstreamSystem\"], \"additionalProperties\": false, \"properties\": {\"creator\": {\"type\": \"string\"}, \"affectedPerson\": {\"type\": \"string\"}, \"loggedInSubject\": {\"type\": \"string\"}, \"action\": {\"type\": \"string\", \"enum\": [\"list_available_courses\", \"list_enrolled_courses\", \"enroll_course\", \"delete_course_history\"]}, \"targetSystem\": {\"type\": \"string\"}, \"resource\": {\"type\": \"string\"}, \"toolName\": {\"type\": \"string\", \"enum\": [\"list_available_courses\", \"list_enrolled_courses\", \"enroll_course\", \"delete_course_history\"]}, \"downstreamSystem\": {\"type\": \"string\"}}}}}",
+  "inlineMode": true,
+  "description": "Agent action authorization details for the Course Agent sample",
+  "useCustomMapping": false,
+  "signatureStrategy": "full_hash",
+  "consentInlineText": "JE9JRENfQVVUSERFVEFJTF9MQUJFTF9TVERUSVRMRSQ8YnIvPiRPSURDX0FVVEhERVRBSUxfTEFCRUxfU1RESUQkIHthZC5pZGVudGlmaWVyfQ",
+  "consentLabel": ""
+}

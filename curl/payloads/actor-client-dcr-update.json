@@ -1,0 +1,12 @@
+{
+  "client_name": "UC2 Course MCP Conversational Agent",
+  "grant_types": [
+    "client_credentials"
+  ],
+  "extension": {
+    "entity_id": "${AGENT_ID}",
+    "entity_type": "agent"
+  },
+  "scope": "agent.run",
+  "token_endpoint_auth_method": "client_secret_post"
+}

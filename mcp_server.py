@@ -7,9 +7,12 @@ from __future__ import annotations
 import json
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import Settings as FastMCPSettings
 
 from mcp_gateway import invoke_mcp_tool
 
+
+FastMCPSettings.model_rebuild()
 
 mcp = FastMCP("course-mcp-server")
 
@@ -77,6 +80,27 @@ def enroll_course(
     """Enroll the signed-in subject in a course after delegated-token validation."""
     return _execute(
         tool_name="enroll_course",
+        delegated_token=delegated_token,
+        course_id=course_id,
+        requested_subject=requested_subject,
+        logged_in_subject=logged_in_subject,
+    )
+
+
+@mcp.tool()
+def delete_course_history(
+    delegated_token: str,
+    course_id: str = "ALL",
+    requested_subject: str = "self",
+    logged_in_subject: str = "self",
+) -> str:
+    """Delete locally recorded self-service enrollments only with course.delete.
+
+    The supplied Verify mapping never grants course.delete, so the demo request
+    reaches the protected handler and is denied by its required-scope check.
+    """
+    return _execute(
+        tool_name="delete_course_history",
         delegated_token=delegated_token,
         course_id=course_id,
         requested_subject=requested_subject,

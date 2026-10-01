@@ -44,6 +44,7 @@ def verify_id_token(token: str, expected_nonce: str) -> Dict[str, Any]:
         algorithms=["RS256", "RS384", "RS512"],
         audience=settings.subject_client_id,
         issuer=settings.verify_issuer,
+        options={"require": ["exp", "iat", "sub", "iss", "aud"]},
     )
 
     actual_nonce = claims.get("nonce")
@@ -53,7 +54,7 @@ def verify_id_token(token: str, expected_nonce: str) -> Dict[str, Any]:
     return claims
 
 
-async def verify_access_token(token: str, required_scope: Optional[str] = None) -> Dict[str, Any]:
+def verify_delegated_token(token: str, required_scope: Optional[str] = None) -> Dict[str, Any]:
     """Validate a JWT access token locally where a JWT access token is required.
 
     This helper is for delegated/resource tokens. It is not used to establish the
@@ -70,13 +71,18 @@ async def verify_access_token(token: str, required_scope: Optional[str] = None) 
             algorithms=["RS256", "RS384", "RS512"],
             audience=None,
             issuer=settings.verify_issuer,
-            options={"verify_aud": False},
+            options={"verify_aud": False, "require": ["exp", "iat", "sub", "iss", "aud"]},
         )
     if required_scope:
         scopes = set(str(claims.get("scope", "")).split())
         if required_scope not in scopes:
             raise PermissionError(f"Missing required scope: {required_scope}")
     return claims
+
+
+async def verify_access_token(token: str, required_scope: Optional[str] = None) -> Dict[str, Any]:
+    """Compatibility wrapper for callers using the asynchronous helper."""
+    return verify_delegated_token(token, required_scope)
 
 
 def extract_authorization_details(claims: Dict[str, Any]) -> list[Dict[str, Any]]:

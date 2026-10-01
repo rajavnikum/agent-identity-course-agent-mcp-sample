@@ -1,67 +1,63 @@
-# MCP Client, Server, and Tool Call Flow
+# MCP client, server and protected tools
 
-## Roles
+## Runtime flow
 
-```text
-app.py        = MCP Host / conversational agent
-mcp_client.py = MCP Client
-mcp_server.py = MCP Server
-mcp_gateway.py= MCP server-side authorization and execution adapter
+```mermaid
+flowchart TD
+    H["app.py: chat"] --> I["llm_agent.py: decide action"]
+    I --> R["Resolve subject and build authorization details"]
+    R --> V["verify_oauth.py: actor token + Token Exchange"]
+    V --> C["mcp_client.py: initialize and discover tools"]
+    C --> Q{"Requested tool published?"}
+    Q -->|"No"| U["Unknown-tool denial"]
+    Q -->|"Yes"| M["MCP tools/call: registered server handler"]
+    M --> G["mcp_gateway.py: validate token and operation"]
+    G --> P{"Authorization passed?"}
+    P -->|"No"| D["Return scope or context denial"]
+    P -->|"Yes"| E["Execute permitted tool"]
+    E --> O["MCP result to application and user"]
 ```
 
-## Discovery
+## Protected token flow
 
-```text
-GET /mcp/tools
- -> app.mcp_tools()
- -> mcp_client.list_mcp_tools()
- -> ClientSession.initialize()
- -> ClientSession.list_tools()
- -> MCP tools/list
- -> mcp_server.py returns registered @mcp.tool() definitions
+```mermaid
+flowchart TD
+    H["Human subject access token"] --> S["IBM Verify STS"]
+    A["Agent actor access token"] --> S
+    R["Selected tool authorization details"] --> S
+    S --> T["Delegated JWT: audience course-mcp-server"]
+    T --> M["MCP tools/call"]
+    M --> Q{"Signature, audience, scope and context valid?"}
+    Q -->|"Yes"| E["Execute selected tool"]
+    Q -->|"No"| D["Deny before execution"]
 ```
 
-## Invocation
+## Published tools and required scopes
 
-```text
-POST /chat
- -> decide_action()
- -> build_agent_authorization_details()
- -> get_actor_token()
- -> token_exchange()
- -> mcp_client.call_mcp_tool()
- -> ClientSession.list_tools()
- -> ClientSession.call_tool(tool_name, arguments)
- -> MCP tools/call
- -> mcp_server.py @mcp.tool() handler
- -> mcp_gateway.invoke_mcp_tool()
- -> delegated-token and ADT validation
- -> course operation
- -> MCP result
-```
-
-## Tools
-
-| MCP tool | Registered function | Business scope |
+| MCP tool | Handler | Required business scope |
 |---|---|---|
 | `list_available_courses` | `mcp_server.list_available_courses()` | `course.read` |
 | `list_enrolled_courses` | `mcp_server.list_enrolled_courses()` | `course.read` |
 | `enroll_course` | `mcp_server.enroll_course()` | `course.enroll` |
+| `delete_course_history` | `mcp_server.delete_course_history()` | `course.delete` |
 
-## Security sequence
+All four also require `mcp.tools.invoke`. The supplied Verify mapping withholds `course.delete`, so the delete test reaches the handler and fails its scope check.
 
-The MCP client does not call the selected tool immediately after the LLM chooses it.
+## Delete denial
 
-```text
-LLM selects tool
- -> build operation context
- -> actor token
- -> IBM Verify token exchange
- -> delegated token
- -> MCP tools/list
- -> MCP tools/call
- -> server validates delegated context against actual tool
- -> execute
+```mermaid
+flowchart TD
+    U["Delete my course history"] --> H["Host builds delete_course_history context"]
+    H --> V["Verify Token Exchange"]
+    V --> T["Delegated scope: mcp.tools.invoke"]
+    T --> C["MCP client discovers published delete tool"]
+    C --> M["tools/call: delete_course_history"]
+    M --> G["Gateway requires mcp.tools.invoke + course.delete"]
+    G --> Q{"course.delete present?"}
+    Q -->|"No: supplied mapping"| D["403: missing course.delete; no deletion"]
+    Q -->|"Yes: separate explicit grant"| E["Validate identity and context before local deletion"]
 ```
 
-The local tutorial uses STDIO and passes the delegated token in the tool arguments. For a remote MCP HTTP deployment, move bearer-token handling to the MCP HTTP resource boundary and use the `Authorization` header according to the MCP authorization model.
+The local tutorial uses STDIO and passes the delegated token in tool arguments. Server diagnostics go to stderr; stdout carries MCP protocol messages. Local enrollment writes persist in SQLite across subprocesses.
+
+For remote MCP HTTP deployments, validate bearer tokens at the HTTP resource boundary and use the Authorization header.

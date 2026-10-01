@@ -1,0 +1,14 @@
+{
+  "type": "urn:ibm:demo:verify:agent_action",
+  "courseId": "ALL",
+  "operationDetails": {
+    "creator": "<actor-client-id>",
+    "affectedPerson": "scott",
+    "loggedInSubject": "scott",
+    "action": "delete_course_history",
+    "targetSystem": "course-mcp-server",
+    "resource": "mcp-tool",
+    "toolName": "delete_course_history",
+    "downstreamSystem": "course-api"
+  }
+}

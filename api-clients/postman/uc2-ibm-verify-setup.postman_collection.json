@@ -29,10 +29,6 @@
       "value": ""
     },
     {
-      "key": "actor_client_reference",
-      "value": ""
-    },
-    {
       "key": "agent_id",
       "value": ""
     },
@@ -101,7 +97,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "const j=pm.response.json(); if(j.access_token) pm.collectionVariables.set(\"admin_access_token\",j.access_token);"
+              "if (pm.response.code >= 200 && pm.response.code < 300) { const v = pm.response.json().access_token; if (v) pm.collectionVariables.set(\"admin_access_token\", v); }"
             ]
           }
         }
@@ -147,14 +143,14 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "const j=pm.response.json(); if(j.client_id) pm.collectionVariables.set(\"actor_client_id\",j.client_id); if(j.client_secret) pm.collectionVariables.set(\"actor_client_secret\",j.client_secret);"
+              "if (pm.response.code >= 200 && pm.response.code < 300) { const v = pm.response.json(); if (v.client_id) pm.collectionVariables.set(\"actor_client_id\", v.client_id); if (v.client_secret) pm.collectionVariables.set(\"actor_client_secret\", v.client_secret); }"
             ]
           }
         }
       ]
     },
     {
-      "name": "03 - Create Agent and Associate Actor Client",
+      "name": "03 - Onboard Agent",
       "request": {
         "method": "POST",
         "header": [
@@ -163,27 +159,18 @@
             "value": "Bearer {{admin_access_token}}"
           },
           {
-            "key": "Accept",
+            "key": "Content-Type",
             "value": "application/scim+json"
           },
           {
-            "key": "Content-Type",
+            "key": "Accept",
             "value": "application/scim+json"
           }
         ],
-        "url": {
-          "raw": "{{tenant_url}}/v1.0/Agents",
-          "host": [
-            "{{tenant_url}}"
-          ],
-          "path": [
-            "v1.0",
-            "Agents"
-          ]
-        },
+        "url": "{{tenant_url}}/v1.0/Agents",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"schemas\": [\n    \"urn:ietf:params:scim:schemas:core:ibm:2.0:Agent\"\n  ],\n  \"displayName\": \"Course MCP Conversational Agent\",\n  \"description\": \"Conversational AI agent that invokes protected MCP course tools\",\n  \"oauthClients\": [\n    {\n      \"issuer\": \"{{actor_client_reference}}\",\n      \"clientId\": \"{{actor_client_id}}\",\n      \"purposes\": [\n        \"agent_id\",\n        \"authentication\"\n      ]\n    }\n  ],\n  \"permissions\": [],\n  \"status\": \"ACTIVE\",\n  \"tags\": [\n    \"course-agent\",\n    \"mcp-tools\",\n    \"conversational-ai\"\n  ]\n}",
+          "raw": "{\n  \"schemas\": [\n    \"urn:ietf:params:scim:schemas:core:ibm:2.0:Agent\"\n  ],\n  \"displayName\": \"UC2 Course MCP Conversational Agent\",\n  \"description\": \"Conversational AI agent that invokes protected course tools\",\n  \"permissions\": [],\n  \"tags\": [\n    \"course-agent\",\n    \"mcp-tools\",\n    \"conversational-ai\"\n  ]\n}\n",
           "options": {
             "raw": {
               "language": "json"
@@ -197,7 +184,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "const j=pm.response.json(); if(j.id) pm.collectionVariables.set(\"agent_id\",j.id);"
+              "if (pm.response.code >= 200 && pm.response.code < 300) { const v = pm.response.json().id; if (v) pm.collectionVariables.set(\"agent_id\", v); }"
             ]
           }
         }
@@ -231,7 +218,97 @@
       }
     },
     {
-      "name": "05 - Get Actor Token",
+      "name": "05 - DCR - Associate Actor Client with Agent",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{tenant_url}}/oauth2/register/{{actor_client_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_name\": \"UC2 Course MCP Conversational Agent\",\n  \"grant_types\": [\n    \"client_credentials\"\n  ],\n  \"extension\": {\n    \"entity_id\": \"{{agent_id}}\",\n    \"entity_type\": \"agent\"\n  },\n  \"scope\": \"agent.run\",\n  \"token_endpoint_auth_method\": \"client_secret_post\"\n}\n",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "06 - Activate Agent",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/scim+json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/scim+json"
+          }
+        ],
+        "url": "{{tenant_url}}/v1.0/Agents/{{agent_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"schemas\": [\n    \"urn:ietf:params:scim:schemas:core:ibm:2.0:Agent\"\n  ],\n  \"displayName\": \"UC2 Course MCP Conversational Agent\",\n  \"description\": \"Conversational AI agent that invokes protected course tools\",\n  \"permissions\": [],\n  \"tags\": [\n    \"course-agent\",\n    \"mcp-tools\",\n    \"conversational-ai\"\n  ],\n  \"status\": \"ACTIVE\"\n}\n",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "07 - Suspend Agent",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/scim+json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/scim+json"
+          }
+        ],
+        "url": "{{tenant_url}}/v1.0/Agents/{{agent_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"schemas\": [\n    \"urn:ietf:params:scim:schemas:core:ibm:2.0:Agent\"\n  ],\n  \"displayName\": \"UC2 Course MCP Conversational Agent\",\n  \"description\": \"Conversational AI agent that invokes protected course tools\",\n  \"permissions\": [],\n  \"tags\": [\n    \"course-agent\",\n    \"mcp-tools\",\n    \"conversational-ai\"\n  ],\n  \"status\": \"SUSPENDED\"\n}\n",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "08 - Get Actor Token",
       "request": {
         "method": "POST",
         "header": [
@@ -282,14 +359,44 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "const j=pm.response.json(); if(j.access_token) pm.collectionVariables.set(\"actor_access_token\",j.access_token);"
+              "if (pm.response.code >= 200 && pm.response.code < 300) { const v = pm.response.json().access_token; if (v) pm.collectionVariables.set(\"actor_access_token\", v); }"
             ]
           }
         }
       ]
     },
     {
-      "name": "06 - Introspect Actor Token",
+      "name": "09 - Register MCP ADT",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{tenant_url}}/oidc-mgmt/v1.0/auth-detail-types",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"urn:ibm:demo:verify:agent_action\",\n  \"schema\": \"{\\\"description\\\": \\\"Agent action authorization details for the IBM Verify conversational AI MCP tools sample\\\", \\\"type\\\": \\\"object\\\", \\\"required\\\": [\\\"type\\\", \\\"courseId\\\", \\\"operationDetails\\\"], \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"type\\\": {\\\"type\\\": \\\"string\\\", \\\"const\\\": \\\"urn:ibm:demo:verify:agent_action\\\"}, \\\"courseId\\\": {\\\"type\\\": \\\"string\\\"}, \\\"operationDetails\\\": {\\\"type\\\": \\\"object\\\", \\\"required\\\": [\\\"creator\\\", \\\"affectedPerson\\\", \\\"loggedInSubject\\\", \\\"action\\\", \\\"targetSystem\\\", \\\"resource\\\", \\\"toolName\\\", \\\"downstreamSystem\\\"], \\\"additionalProperties\\\": false, \\\"properties\\\": {\\\"creator\\\": {\\\"type\\\": \\\"string\\\"}, \\\"affectedPerson\\\": {\\\"type\\\": \\\"string\\\"}, \\\"loggedInSubject\\\": {\\\"type\\\": \\\"string\\\"}, \\\"action\\\": {\\\"type\\\": \\\"string\\\", \\\"enum\\\": [\\\"list_available_courses\\\", \\\"list_enrolled_courses\\\", \\\"enroll_course\\\", \\\"delete_course_history\\\"]}, \\\"targetSystem\\\": {\\\"type\\\": \\\"string\\\"}, \\\"resource\\\": {\\\"type\\\": \\\"string\\\"}, \\\"toolName\\\": {\\\"type\\\": \\\"string\\\", \\\"enum\\\": [\\\"list_available_courses\\\", \\\"list_enrolled_courses\\\", \\\"enroll_course\\\", \\\"delete_course_history\\\"]}, \\\"downstreamSystem\\\": {\\\"type\\\": \\\"string\\\"}}}}}\",\n  \"inlineMode\": true,\n  \"description\": \"Agent action authorization details for the Course Agent sample\",\n  \"useCustomMapping\": false,\n  \"signatureStrategy\": \"full_hash\",\n  \"consentInlineText\": \"JE9JRENfQVVUSERFVEFJTF9MQUJFTF9TVERUSVRMRSQ8YnIvPiRPSURDX0FVVEhERVRBSUxfTEFCRUxfU1RESUQkIHthZC5pZGVudGlmaWVyfQ\",\n  \"consentLabel\": \"\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "10 - Introspect Actor Token",
       "request": {
         "method": "POST",
         "header": [

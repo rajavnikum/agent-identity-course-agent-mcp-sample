@@ -10,3 +10,18 @@
 8. At a remote MCP HTTP server, validate the bearer token at the protected resource boundary.
 9. Compare the authorized tool/action context to the actual `tools/call` request.
 10. Execute the tool only after validation succeeds.
+
+## Integration flow
+
+```mermaid
+flowchart TD
+    H["Agent / MCP Host"] --> C["MCP HTTP client"]
+    C -->|"Authorization: Bearer delegated token"| B["Remote protected MCP boundary"]
+    B --> Q{"Token authorized?"}
+    Q -->|"No"| D["Deny HTTP request"]
+    Q -->|"Yes"| R{"MCP operation"}
+    R --> L["tools/list: discover tools"]
+    R --> T["tools/call: validate and execute tool"]
+```
+
+Registering a tool makes it discoverable; map its required scopes and validate approved operation context before execution. See the delete example in the README.

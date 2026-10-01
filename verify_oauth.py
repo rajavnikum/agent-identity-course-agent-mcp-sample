@@ -136,8 +136,8 @@ async def token_exchange(
     print("\n===== TOKEN EXCHANGE REQUEST =====")
     safe_data = dict(data)
     safe_data["client_secret"] = "***"
-    safe_data["subject_token"] = subject_token[:80] + "..."
-    safe_data["actor_token"] = actor_token[:80] + "..."
+    safe_data["subject_token"] = "[redacted]"
+    safe_data["actor_token"] = "[redacted]"
     if len(audiences) > 1:
         safe_data["audience"] = audiences
     print(json.dumps(safe_data, indent=2))
@@ -158,7 +158,14 @@ async def token_exchange(
 
     print("\n===== TOKEN EXCHANGE RESPONSE =====")
     print("STATUS:", response.status_code)
-    print("BODY:", response.text)
+    try:
+        safe_response = response.json()
+        for token_field in ("access_token", "refresh_token", "id_token"):
+            if token_field in safe_response:
+                safe_response[token_field] = "[redacted]"
+        print("BODY:", json.dumps(safe_response))
+    except ValueError:
+        print("BODY: [non-JSON response omitted]")
     print("==================================\n")
 
     if response.status_code >= 400:
