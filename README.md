@@ -12,28 +12,33 @@ The example is a course assistant. A user signs in and asks:
 Show me the available courses.
 Enroll me in Advanced Security Operations.
 Show my enrolled courses.
-Show Rick's enrolled courses.
+Show other user enrolled courses.
 ```
 
 The important difference from a direct-tool sample is **where the tools live and how they are invoked**.
 
-```text
-Direct tools
-Agent code -> Python/API function
-
-MCP tools
-Agent / MCP Host -> MCP Client -> MCP Server -> registered MCP tool
+```mermaid
+flowchart TD
+    A["Agent"] --> Q{"Integration"}
+    Q -->|"Direct tools"| D["Python / API function"]
+    Q -->|"MCP tools"| C["MCP client"]
+    C --> S["MCP server"]
+    S --> T["Registered tool"]
 ```
 
-In this UC2 sample, the FastAPI conversational application is the **MCP Host**. `mcp_client.py` is the **MCP Client**. `mcp_server.py` is the **MCP Server**. The MCP server registers three course tools with `@mcp.tool()` and the client discovers and invokes them with the standard MCP operations `tools/list` and `tools/call`.
+In this UC2 sample, the FastAPI conversational application is the **MCP Host**. `mcp_client.py` is the **MCP Client**. `mcp_server.py` is the **MCP Server**. The MCP server registers four course tools with `@mcp.tool()` and the client discovers and invokes them with the standard MCP operations `tools/list` and `tools/call`.
 
 Before the protected MCP tool is invoked, the application obtains the human subject token, obtains the registered agent's actor token, constructs MCP-specific authorization details, and asks IBM Verify to issue a delegated token through OAuth 2.0 Token Exchange.
 
 The delegated token then travels with the local MCP tool invocation in this tutorial. The MCP server validates the delegated identity and authorization context before the course operation executes.
 
-![MCP tools agent flow](images/uc2-00-mcp-tools-agent-flow.png)
 
-> Add the architecture PNG as `images/uc2-00-mcp-tools-agent-flow.png`.
+
+## Setup guide
+
+This  exposes four MCP tools, including a delete handler denied by missing `course.delete`.
+
+Steps 1–8 configure Verify and the application; Step 9 verifies MCP discovery; Step 10 exercises tools and suspension; Step 11 reviews the audit evidence.
 
 ## Why this sample matters
 
@@ -147,7 +152,7 @@ mcp.run(transport="stdio")
 
 ### Which tools does the MCP server expose?
 
-The server registers three Python functions as MCP tools:
+The server registers four Python functions as MCP tools:
 
 ```python
 @mcp.tool()
@@ -161,125 +166,75 @@ def list_enrolled_courses(...):
 @mcp.tool()
 def enroll_course(...):
     ...
+
+@mcp.tool()
+def delete_course_history(...):
+    ...
 ```
 
 FastMCP uses the function name, type hints, and docstring to expose the tool definition to MCP clients.
 
 ## Sample architecture
 
-```text
-+---------------------------+
-| Human user                |
-| Browser / chat            |
-+-------------+-------------+
-              |
-              | Login with IBM Verify
-              v
-+-------------+-------------------------------------------+
-| Conversational Course Agent / MCP Host                  |
-| app.py                                                   |
-|                                                          |
-|  1. decide_action(message)                               |
-|  2. build MCP authorization_details                     |
-|  3. get actor token                                     |
-|  4. IBM Verify token exchange                           |
-|  5. call_mcp_tool(...)                                  |
-+-----------------------------+----------------------------+
-                              |
-                              v
-+-----------------------------+----------------------------+
-| MCP Client                                               |
-| mcp_client.py                                            |
-|                                                          |
-| ClientSession.initialize()                               |
-| session.list_tools()        -> MCP tools/list             |
-| session.call_tool(...)      -> MCP tools/call             |
-+-----------------------------+----------------------------+
-                              |
-                              | MCP over STDIO
-                              v
-+-----------------------------+----------------------------+
-| MCP Server                                               |
-| mcp_server.py                                            |
-| name = course-mcp-server                                 |
-|                                                          |
-| @mcp.tool() list_available_courses                       |
-| @mcp.tool() list_enrolled_courses                        |
-| @mcp.tool() enroll_course                                |
-+-----------------------------+----------------------------+
-                              |
-                              v
-+-----------------------------+----------------------------+
-| Server-side security and course operation                |
-| mcp_gateway.py                                           |
-|                                                          |
-| audience -> actor -> scope -> ADT -> tool/action match   |
-| -> subject policy -> execute permitted operation         |
-+----------------------------------------------------------+
+```mermaid
+flowchart TD
+    U["Human user: browser / chat"] --> H["MCP Host: app.py"]
+    U -->|"Authorization Code + PKCE"| V["IBM Verify"]
+    V -->|"ID token + subject access token"| H
+    H -->|"Actor credentials"| V
+    H -->|"Subject + actor + authorization details"| S["Verify STS"]
+    S -->|"Delegated MCP token"| H
+    H --> C["MCP Client: mcp_client.py"]
+    C -->|"STDIO: tools/list + tools/call"| M["MCP Server: mcp_server.py"]
+    M --> G["Protected boundary: mcp_gateway.py"]
+    G --> Q{"Token, scope and context valid?"}
+    Q -->|"No"| D["Deny with validation stage"]
+    Q -->|"Yes"| E["Execute authorized local tool"]
+    E --> DB["SQLite enrollment store"]
+    E -->|"Tool result"| H
 ```
 
 IBM Verify sits on the identity/token path before the MCP client calls the protected tool:
 
-```text
-Subject token + Actor token + MCP authorization_details
-                         |
-                         v
-                  IBM Verify STS
-                         |
-                         v
-Delegated token: aud = course-mcp-server
-                         |
-                         v
-              MCP tools/call arguments
-                         |
-                         v
-                 MCP Server validates
+```mermaid
+flowchart TD
+    H["Human subject access token"] --> S["IBM Verify STS"]
+    A["Agent actor access token"] --> S
+    R["Selected tool authorization details"] --> S
+    S --> T["Delegated JWT: audience course-mcp-server"]
+    T --> M["MCP tools/call"]
+    M --> Q{"Signature, audience, scope and context valid?"}
+    Q -->|"Yes"| E["Execute selected tool"]
+    Q -->|"No"| D["Deny before execution"]
 ```
 
 ## Runtime flow
 
-![Runtime MCP tool agent flow](images/mcp-tools-agent-runtime-flow.png)
 
 ## Project structure
 
-```text
-.
-├── README.md
-├── app.py                       # Conversational agent and MCP Host
-├── mcp_client.py                # Real MCP ClientSession, tools/list, tools/call
-├── mcp_server.py                # FastMCP server and @mcp.tool() registrations
-├── mcp_gateway.py               # IBM Verify-aware server-side validation/dispatch
-├── llm_agent.py                 # Natural language -> allow-listed action
-├── rar_builder.py               # MCP-specific authorization_details
-├── verify_oauth.py              # PKCE, actor token, OAuth token exchange
-├── verify_directory.py          # Optional target-user resolution
-├── course_api.py                # Optional downstream validation mode
-├── token_utils.py               # Token claim helpers for the demo
-├── config.py                    # Environment settings
-├── templates/index.html         # Chat UI
-├── mock_courses.json            # Sample course data
-├── payloads/
-│   └── agent_action_adt_schema.json
-├── api-clients/
-│   ├── postman/
-│   └── insomnia/
-├── curl/
-├── docs/
-└── images/
-```
+| File / directory | Role |
+|---|---|
+| `app.py` | MCP Host and browser login |
+| `mcp_client.py` | Initialize, discover and call MCP tools |
+| `mcp_server.py` | Register four tools with FastMCP |
+| `mcp_gateway.py` | Protected validation and execution |
+| `enrollment_store.py` | Local SQLite enrollment persistence |
+| `llm_agent.py` | Intent selection |
+| `rar_builder.py` | MCP authorization details |
+| `verify_oauth.py` | Subject, actor and delegated-token flows |
+| `token_utils.py` | ID-token and delegated-token validation |
+| `course_api.py` | Optional downstream validation |
+| `config.py / .env.example` | Application settings |
+| `api-clients/` | Postman and Insomnia collections |
+| `payloads/ / curl/` | Schema and setup payloads |
+| `docs/` | Walkthroughs and rendered guide |
+| `images/` | Reference images |
 
 ## Prerequisites
 
 > **Python 3.11 or later is recommended for this sample.**
 
-Check:
-
-```bash
-python --version
-python -c "import ssl; print(ssl.OPENSSL_VERSION)"
-```
-
-Use a Python build backed by a current OpenSSL version.
 
 You also need:
 
@@ -312,8 +267,8 @@ Do not select unrelated administrative entitlements. They are not required by th
 Capture:
 
 ```text
-ADMIN_CLIENT_ID=<admin API client ID>
-ADMIN_CLIENT_SECRET=<admin API client secret>
+admin_client_id=<admin API client ID>
+admin_client_secret=<admin API client secret>
 ```
 
 
@@ -362,7 +317,7 @@ Run:
 02 - DCR - Create UC2 Actor Client
 ```
 
-The collection saves the standard `access_token`, `client_id`, and `client_secret` response values.
+Set `tenant_url`, `admin_client_id`, and `admin_client_secret` in collection variables. The collection saves returned tokens and actor credentials; Insomnia requires manual response copying. For shell commands below, export `TENANT` as the tenant origin and `ADMIN_ACCESS_TOKEN` as request 01’s returned access token.
 
 ### Insomnia
 
@@ -374,34 +329,230 @@ api-clients/insomnia/uc2-ibm-verify-setup.insomnia.json
 
 Populate the base environment and run the same numbered requests. Copy returned values into the environment where needed.
 
-## Step 3 — Onboard the MCP conversational agent and associate the actor client
+## Step 3 — Onboard the AI agent and associate the actor client
 
-The actor OAuth client authenticates the AI runtime. The Agent Registry record represents the governed Course MCP Conversational Agent.
+The OAuth application created in Step 2 provides the runtime credentials that the Course MCP Agent Application uses to obtain an actor token.
 
-```bash
-export TENANT_URL="https://<tenant>"
-export ADMIN_ACCESS_TOKEN="<admin-access-token>"
-export ACTOR_CLIENT_ID="<actor-client-id>"
-export ACTOR_CLIENT_REFERENCE="<client reference used by your tenant>"
+In this step, you register the AI agent in IBM Security Verify's Agent Registry and associate it with that OAuth application.
 
-curl --request POST "$TENANT_URL/v1.0/Agents" \
+### Governance and activation flow
+
+```mermaid
+flowchart TD
+    A["Create actor OAuth application"] --> R["Onboard Agent Registry identity"]
+    R --> L["Associate actor client with agent"]
+    L --> Q{"Association and status verified?"}
+    Q -->|"No"| F["Correct setup before runtime"]
+    Q -->|"Yes"| V["Activate agent"]
+    V --> T["Obtain fresh actor token"]
+    T --> S["Subject + actor Token Exchange"]
+```
+
+### Why the Agent Registry record matters
+
+The Agent Registry provides a governed identity for the AI agent, distinct from the OAuth application and its runtime credentials.
+
+The three components serve different purposes:
+
+*Course MCP Agent Application*: Hosts the conversational interface and runs the AI agent.
+*Actor OAuth application*: Provides the OAuth client credentials used to obtain an actor token.
+*Agent Registry record*: Represents the AI agent as a governed identity and establishes its association with the actor OAuth application.
+
+Associating the OAuth application with the Agent Registry record allows IBM Verify to relate the runtime OAuth identity to the registered AI agent.
+
+This association is important for operational governance and audit because OAuth client credentials can be rotated or replaced while the Agent identity remains stable. The Agent Registry provides a durable governed identity. Runtime events may expose client IDs without the Registry ID; verify the actual event payload before treating it as a correlation key.
+
+
+### Onboard the agent
+
+Create a new Agent in IBM Verify with the following values:
+
+Display name: UC2 Course MCP Conversational Agent
+Description: Conversational AI agent that invokes protected course tools
+Tags: course-agent, mcp-tools, conversational-ai
+
+For this tutorial, **Onboard agent** through **one** of the following methods:
+
+- cURL
+- Postman
+- Insomnia
+- IBM Verify UI
+
+### Using cURL
+```
+curl --request POST "$TENANT/v1.0/Agents" \
   --header "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
   --header "Accept: application/scim+json" \
   --header "Content-Type: application/scim+json" \
   --data "$(envsubst < curl/payloads/course-mcp-agent.json)"
 ```
 
+The sample payload uses:
 
-Postman requests:
+```json
+{
+  
+  "schemas": [
+    "urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"
+  ],
+  "displayName": "UC2 Course MCP Conversational Agents",
+  "description": "Conversational AI agent with protected MCP course tools",
+  "permissions": [],
+  "tags": [
+    "course-agent",
+    "mcp-tools",
+    "conversational-ai"
+  ]
+}
+```
+Validate Onboarded Agents 
 
-```text
-03 - Create Agent and Associate Actor Client
-04 - Get Agent Details
-05 - Get Actor Token
-06 - Introspect Actor Token
+```
+curl --request GET "$TENANT/v1.0/Agents" \
+  --header "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
+  --header "Accept: application/scim+json" \
+  --header "Content-Type: application/scim+json"   
 ```
 
-Note : Use the Agent onboarding tutorial to Onboard Agents properly and map to runtime OAuth Client.
+### Postman
+
+* Run **03 - Onboard Agent**<br>
+* Run **04 - Get Agent Details**.
+
+### Insomnia
+
+* Run **03 - Onboard Agent**.<br>
+* Run **04 - Get Agent Details**.
+
+### With IBM Verify User Interface
+* Go to Admin Console, Under **Identities** <br>
+* Click AI agents
+* Create Agent
+
+
+Record the generated Agent ID. This is the stable identifier for the governed Agent identity and is also used when associating the Agent OAuth application with the Agent Registry record.
+
+```bash
+export AGENT_ID="<agent-id>"
+```
+
+
+### Associate the OAuth application
+
+### Using cURL
+```
+curl --request PUT "$TENANT/oauth2/register/$ACTOR_CLIENT_ID" \
+  --header "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data "$(envsubst < curl/payloads/actor-client-dcr-update.json)"  
+```
+
+### Postman
+
+* Make sure you have `actor_client_id` and `agent_id` set in the collection/Base Environment<br>
+* Run **05 - DCR - Associate Actor Client with Agent**.
+
+### Insomnia
+
+* Make sure you have `actor_client_id` and `agent_id` set in the collection/Base Environment<br>
+* Run **05 - DCR - Associate Actor Client with Agent**.
+
+
+### With IBM Verify User Interface
+
+  To associate the OAuth application after the Agent has been created perform the below steps:
+
+1. Open the Agent in the IBM Verify administration console.
+2. Edit the Agent.
+3. Go to Identity & authentication.
+4. Select the OAuth application created in Step 2: UC2 Course MCP Conversational Agent.
+5. Continue through the configuration and save the Agent.
+6. Reopen the Agent and verify that the OAuth application is shown under its identity and authentication configuration.
+
+
+### Activate the Agent
+
+A newly created Agent is not yet ready for runtime use. After associating the Agent OAuth application with the Agent identity, update the Agent status to `ACTIVE`.
+
+The activation payload is provided in:
+
+```text
+curl/payloads/course-mcp-agent-activate.json
+```
+
+The payload contains:
+
+```json
+{
+  "schemas": [
+    "urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"
+  ],
+  "displayName": "UC2 Course MCP Conversational Agent",
+  "description": "Conversational AI agent with protected MCP course tools",
+  "permissions": [],
+  "status": "ACTIVE",
+  "tags": [
+    "course-agent",
+    "mcp-tools",
+    "conversational-ai"
+  ]
+}
+```
+
+> The `AGENT_ID` used below is the Agent Registry ID returned when the Agent was created earlier in this step.
+
+Choose either **cURL**, **Postman**, or **Insomnia** to activate the Agent.
+
+### Option 1 — Using cURL
+
+Update the Agent using the activation payload:
+
+```bash
+curl --request PUT "$TENANT/v1.0/Agents/$AGENT_ID" \
+  --header "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
+  --header "Accept: application/scim+json" \
+  --header "Content-Type: application/scim+json" \
+  --data @curl/payloads/course-mcp-agent-activate.json
+```
+
+After the request succeeds, the Agent status should be:
+
+```text
+ACTIVE
+```
+
+### Option 2 — Using Postman
+
+Create a `PUT` request to:
+
+```text
+{{ TENANT }}/v1.0/Agents/{{AGENT_ID}}
+```
+
+* Run **06 Activate Agent**.
+
+
+### Option 3 — Using Insomnia
+
+Create a `PUT` request to:
+
+```text
+{{ TENANT }}/v1.0/Agents/{{AGENT_ID}}
+```
+* Run **06 Activate Agent**.
+
+
+### Verify the Agent configuration
+
+Regardless of which method was used, verify the final Agent configuration before continuing.
+
+The Agent should now:
+
+- have the display name `UC2 Course MCP Conversational Agent`;
+- be associated with the Agent OAuth application created in Step 2; and
+- have a status of `ACTIVE`.
+
+For more information about onboarding AI agents, please refer to the IBM documentation:https://www.ibm.com/docs/en/agent-identity?topic=tasks-onboarding-ai-agent
 
 ## Step 4 — Configure the human subject application
 
@@ -413,7 +564,7 @@ Create the OIDC application used by the browser chat.
 | PKCE | S256 / required |
 | Redirect URI | `http://localhost:8000/callback` |
 | OIDC scopes | `openid profile email` |
-| Subject access-token format | **JWT or opaque** |
+| Subject access-token format | **Default (opaque) is supported; JWT is optional** |
 | ID token | Required; used to establish the logged-in Human User |
 
 Capture:
@@ -427,12 +578,15 @@ SUBJECT_CLIENT_SECRET=<subject client secret>
 
 The browser login deliberately separates **identity** from the OAuth access token:
 
-```text
-Authorization Code + PKCE
-        |
-        +--> id_token      -> validate signature/audience/issuer/nonce -> Human User identity
-        |
-        +--> access_token  -> keep unchanged -> RFC 8693 subject_token
+```mermaid
+flowchart TD
+    B["Browser sign-in"] --> V["Verify: Authorization Code + PKCE"]
+    V --> ID["ID token"]
+    V --> AT["Subject access token: Default or JWT"]
+    ID --> Q{"Signature, issuer, audience and nonce valid?"}
+    Q -->|"Yes"| I["Logged-in human identity"]
+    Q -->|"No"| D["Reject login"]
+    AT --> STS["STS subject_token: access_token type"]
 ```
 
 The application does **not** decode the subject access token to decide who logged in.
@@ -446,6 +600,77 @@ subject_token_type=urn:ietf:params:oauth:token-type:access_token
 `verify_oauth.py` sends an OIDC `nonce` on the authorization request. `app.py` validates the returned `id_token` through `verify_id_token()` and stores only the access token plus validated ID-token claims in the browser session.
 
 
+
+### Configure the actor relationship
+
+The subject token represents the signed-in human user. During token exchange, IBM Verify must also validate whether the agent represented by the actor token is permitted to act on behalf of that user.
+
+This sample uses the OAuth may_act relationship for this validation.
+
+1. Open the **Introspect** endpoint configuration.
+2. Add an introspection attribute mapping.
+3. Select **Custom rule** as the source.
+4. In the custom rule, enter:
+
+   ```json
+   {
+     "sub": "<actor-client-id>"
+   }
+   ```
+
+   Replace `<actor-client-id>` with the `ACTOR_CLIENT_ID` recorded in Step 2.
+
+5. Set the **Target attribute** to:
+
+   ```text
+   may_act
+   ```
+
+6. Save the mapping.
+
+
+
+The custom rule produces the value of the `may_act` attribute. Conceptually, the resulting introspection response contains:
+
+```json
+{
+  "may_act": {
+    "sub": "<actor-client-id>"
+  }
+}
+```
+IBM Verify allows `may_act` to contain one or more properties. If more than one property is included, every property must match the corresponding property in the actor token.
+
+UC2 therefore uses only `sub`, because it is sufficient to identify the permitted actor and avoids unnecessarily requiring two equivalent claim comparisons.
+
+> `ACTOR_CLIENT_ID` is the OAuth client ID of the **Agent OAuth application** created in Step 2. It is not the Agent Registry ID created in Step 3.
+
+### Application entitlements
+
+After completing the Sign-on configuration, configure who is allowed to access the application.
+
+1. Open the **Entitlements** tab for `UC2_subject_token`.
+2. Select:
+
+   **All users are entitled to this application**
+
+3. Save the configuration.
+
+This tutorial uses **All users are entitled to this application** so that the test Human User can sign in to the Course MCP Agent Application without requiring an additional user or group assignment.
+
+> **Why is this required?**  
+
+> Creating the OIDC application and enabling the Authorization Code grant does not by itself grant users access to the application. IBM Verify also evaluates the application's entitlement configuration during sign-in. If the signed-in user is not entitled to the application, authentication fails with an error similar to:
+>
+> ```text
+> Only entitled users can single sign-on to the application.
+> ```
+>
+> For this tutorial, allowing all users keeps the setup simple. In a production deployment, access should normally be restricted to the users or groups that are authorized to use the application.
+
+
+
+Keep **Skip default actor validation** disabled on the STS client for this `may_act` setup. Actor Criteria is an alternative configuration, not an additional requirement: if your tenant uses it instead, configure an explicit allow rule before skipping the default check. See [Actor criteria](https://www.ibm.com/docs/en/security-verify?topic=clients-actor-criteria).
 
 ## Step 5 — Create the MCP Authorization Details Type
 
@@ -493,7 +718,20 @@ enroll_course
 delete_course_history
 ```
 
-`delete_course_history` is intentionally recognized only as a **negative authorization test**. It may reach Token Exchange so that the minimum delegated scope can be demonstrated, but the MCP server does not register a delete tool and therefore does not execute a delete operation.
+`delete_course_history` is registered as a real MCP tool for the **scope-denial test**. The supplied Verify mapping grants only `mcp.tools.invoke`; the gateway additionally requires `course.delete`, so the published handler is denied before execution.
+
+### Register the ADT with cURL, Postman, Insomnia, or UI
+
+Use UC2's schema, which includes `toolName`, `targetSystem=course-mcp-server`, `resource=mcp-tool`, and `downstreamSystem`. If UC1 already registered the same type name in this tenant, inspect its schema and update it to support these MCP fields before running UC2. Do not blindly create a duplicate or remove fields needed by UC1.
+
+```bash
+curl --request POST "$TENANT/oidc-mgmt/v1.0/auth-detail-types" \
+  --header "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data @payloads/agent_action_adt_registration.json
+```
+
+In Postman or Insomnia, run **09 Register MCP ADT** only if the type does not exist. If it exists, use **Applications → Authorization detail types**, open the type, and replace/merge its schema using `payloads/agent_action_adt_schema.json`. For a new type, click **Create → Standard**, enter the type name above, paste that schema and save. Consent-display text may use `{ad.courseId}`; display text does not enforce authorization.
 
 ### Why `toolName` matters
 
@@ -520,7 +758,7 @@ actual MCP tools/call name      = enroll_course
 
 Tool discovery therefore does not grant permission to reuse a delegated token for a different tool.
 
-## Step 7 — Configure the STS / Token Exchange client
+## Step 6 — Configure the STS / Token Exchange client
 
 Configure an IBM Verify STS/token-exchange client for RFC 8693 token exchange.
 
@@ -538,6 +776,19 @@ authorization_details = MCP tool invocation context
 ```
 
 **There is no hard-coded `scope=` parameter in the Token Exchange request.** The delegated scopes are derived by IBM Verify from the authorization detail that is actually granted.
+
+### Create the STS application in the UI
+
+1. Open **Applications → Add application → OpenID Connect** and name it `UC2 Course MCP Agent Token Exchange`; complete the company name.
+2. Under **Sign-on configuration**, enable **Token Exchange** and require an actor token.
+3. Set subject and actor token types to `urn:ietf:params:oauth:token-type:access_token`.
+4. Under token settings, select **JWT** for the **delegated output access token**, and set audience to `course-mcp-server`. This output format is distinct from the human subject access-token format.
+5. Permit `mcp.tools.invoke`, `course.read`, and `course.enroll`, and attach the ADT from Step 5.
+6. Leave **Skip default actor validation** disabled for the Step 4 `may_act` configuration.
+7. Open **Endpoint configuration → Token → Consent request → Edit** and paste the UC2 mapping below.
+8. Configure application entitlements for the test user (or all users for this demo), save, and record `STS_CLIENT_ID` and `STS_CLIENT_SECRET`.
+
+Postman and Insomnia perform runtime Token Exchange after this UI configuration. They do not configure the consent rule or application entitlements. <span style="color:red">TBD: provide tenant-tested management API payloads if API-only subject/STS application provisioning is required.</span>
 
 Configure the STS authorization-details mapping with the following rule:
 
@@ -579,7 +830,7 @@ This gives the delegated token exactly the authority associated with the approve
 | `enroll_course` | `mcp.tools.invoke course.enroll` |
 | `delete_course_history` | `mcp.tools.invoke` only |
 
-The MCP protected-resource check independently requires both `mcp.tools.invoke` and the correct business scope for the three executable tools. No `course.delete` scope exists in this sample.
+The protected boundary requires `mcp.tools.invoke` plus the business scope for each of the four tools. The delete handler requires `course.delete`, but the supplied STS mapping never grants it. Keep `course.delete` out of the STS permitted scopes for this negative test.
 
 Capture:
 
@@ -662,7 +913,7 @@ After the complete IBM Verify and MCP flow works, enable Gemini.
 
 ## Step 8 — Install and run
 
-Use Python 3.11 or later:
+Use Python 3.11–3.13 for the sample; Python 3.14 dependency compatibility has not been validated:
 
 ```bash
 python3.11 -m venv .venv
@@ -731,15 +982,20 @@ Show me the available courses.
 
 Expected flow:
 
-```text
-decide_action()
- -> list_available_courses
- -> IBM Verify token exchange
- -> MCP Client tools/list
- -> MCP Client tools/call(list_available_courses)
- -> MCP Server @mcp.tool() list_available_courses()
- -> server-side token/ADT validation
- -> return available courses
+```mermaid
+flowchart TD
+    H["app.py: chat"] --> I["llm_agent.py: decide action"]
+    I --> R["Resolve subject and build authorization details"]
+    R --> V["verify_oauth.py: actor token + Token Exchange"]
+    V --> C["mcp_client.py: initialize and discover tools"]
+    C --> Q{"Requested tool published?"}
+    Q -->|"No"| U["Unknown-tool denial"]
+    Q -->|"Yes"| M["MCP tools/call: registered server handler"]
+    M --> G["mcp_gateway.py: validate token and operation"]
+    G --> P{"Authorization passed?"}
+    P -->|"No"| D["Return scope or context denial"]
+    P -->|"Yes"| E["Execute permitted tool"]
+    E --> O["MCP result to application and user"]
 ```
 
 ### Test B — Enroll the signed-in user
@@ -812,7 +1068,9 @@ This distinction is important: **directory existence is not authorization**. Fin
 
 To test named-user resolution, configure `VERIFY_MANAGEMENT_CLIENT_ID` and `VERIFY_MANAGEMENT_CLIENT_SECRET` with permission to read IBM Verify Directory users.
 
-### Test E — Delete is recognized but not executable
+### Test E — Published delete tool is denied by missing scope
+
+Update the existing Verify ADT schema first: both `action` and `toolName` must allow `delete_course_history`. Use the regenerated `payloads/agent_action_adt_schema.json`.
 
 Prompt:
 
@@ -827,7 +1085,151 @@ action = delete_course_history
 delegated scope = mcp.tools.invoke
 ```
 
-No `course.read`, `course.enroll`, or `course.delete` scope is added. The request is then denied at the MCP boundary because `delete_course_history` is **not an exposed MCP tool**. This demonstrates that recognizing an intent and receiving a narrowly scoped delegated token still does not create a tool capability that the MCP server has not published.
+No `course.read`, `course.enroll`, or `course.delete` scope is granted. The published delete handler reaches the gateway, which returns HTTP **403**, `denied_stage="scope"`, and a reason containing **Missing required scope(s)** and **course.delete**. No enrollment data is changed.
+
+In Postman or Insomnia, run runtime request **07 Token Exchange for Delete**, copy the returned delegated token if using Insomnia, then run **08 Invoke Delete**. If you still see “tool is not exposed,” ensure the regenerated `mcp_server.py` is running and discovery shows all four tools.
+
+```mermaid
+flowchart TD
+    U["Delete my course history"] --> H["Host builds delete_course_history context"]
+    H --> V["Verify Token Exchange"]
+    V --> T["Delegated scope: mcp.tools.invoke"]
+    T --> C["MCP client discovers published delete tool"]
+    C --> M["tools/call: delete_course_history"]
+    M --> G["Gateway requires mcp.tools.invoke + course.delete"]
+    G --> Q{"course.delete present?"}
+    Q -->|"No: supplied mapping"| D["403: missing course.delete; no deletion"]
+    Q -->|"Yes: separate explicit grant"| E["Validate identity and context before local deletion"]
+```
+
+### Test F — Suspend the Agent and verify runtime access is blocked
+
+This test demonstrates the effect of the Agent identity lifecycle on runtime authorization.
+
+First, complete one of the normal operations while the Agent status is `ACTIVE`, for example:
+
+```text
+Show me the available courses.
+```
+
+or:
+
+```text
+Enroll me in Advanced Security Operations.
+```
+
+Confirm that the operation succeeds before continuing.
+
+#### Suspend the Agent
+
+The suspension payload is provided in:
+
+```text
+curl/payloads/course-mcp-agent-suspend.json
+```
+
+The payload contains:
+
+```json
+{
+  "schemas": [
+    "urn:ietf:params:scim:schemas:core:ibm:2.0:Agent"
+  ],
+  "displayName": "UC2 Course MCP Conversational Agent",
+  "description": "Conversational AI agent with protected MCP course tools",
+  "permissions": [],
+  "status": "SUSPENDED",
+  "tags": [
+    "course-agent",
+    "mcp-tools",
+    "conversational-ai"
+  ]
+}
+```
+### Using cURL
+
+```bash
+curl --request PUT "$TENANT/v1.0/Agents/$AGENT_ID" \
+  --header "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
+  --header "Accept: application/scim+json" \
+  --header "Content-Type: application/scim+json" \
+  --data @curl/payloads/course-mcp-agent-suspend.json
+```
+
+### With IBM Verify User Interface
+ 
+ To suspend an Agent using the IBM Verify user interface:
+
+1. Go to Identities → AI agents.
+2. Select the Agent that you want to suspend.
+3. Open Options for the selected Agent.
+4. Select Suspend.
+
+After the operation completes, verify that the Agent status is shown as: SUSPENDED
+
+
+> The Agent OAuth application remains associated with the Agent identity. 
+
+After suspending the Agent test operation again
+
+```text
+Show me the available courses.
+```
+It should fail.
+
+
+Run **07 Suspend Agent** in Postman/Insomnia, then **04 Get Agent Details**. Try a new chat operation, which requests a fresh actor token. Record the denial stage and Verify error. Reactivate using **06 Activate Agent** and repeat the operation. Already issued JWTs are not automatically invalidated by a local signature check; this test demonstrates fresh runtime requests after suspension.
+
+## Step 11 — Audit the human, agent, Token Exchange, and MCP tool activity
+
+```mermaid
+flowchart TD
+    H["Human sign-in"] --> HE["Human authentication event"]
+    A["Agent authentication"] --> AE["Actor authentication event"]
+    T["Token Exchange"] --> TE["STS issuance event"]
+    M["MCP tool call"] --> ME["MCP validation and result diagnostics"]
+    HE --> C["Compare actual timestamps and identity / correlation fields"]
+    AE --> C
+    TE --> C
+    ME --> C
+    C --> Q{"Enough shared evidence?"}
+    Q -->|"Yes"| V["Trace observed operation"]
+    Q -->|"No"| D["Record correlation gap; collect tenant examples"]
+```
+
+
+1. In **Reporting & diagnostics → Reports**, select the time window of your test and locate the human sign-in for `UC2_subject_token`: Authorization Code, the signed-in user, and access/ID-token issuance.
+2. Locate actor authentication for `UC2 Course MCP Conversational Agent`: Client Credentials, `agent.run`, actor client ID, result and timestamp. Inspect the raw event for agent entity type and Registry ID if available. Do not assume that every UI report displays the Registry ID. If the AI activity report is empty, also check client authentication/application activity reports.
+3. Locate `UC2 Course MCP Agent Token Exchange`: grant `urn:ietf:params:oauth:grant-type:token-exchange`, result, subject/actor fields if present, and granted scopes. Listing should show `mcp.tools.invoke course.read`; enrollment should show `mcp.tools.invoke course.enroll`.
+4. Compare with application/STDIO server diagnostics: selected tool, MCP server, course ID, authorization-details match, validation stage and actual result. A successfully issued token does not prove that a tool ran or that enrollment succeeded.
+5. Repeat for the suspension and cross-user negative tests. Record the failure at actor issuance, STS, or MCP validation rather than claiming all failures occurred at Token Exchange.
+
+| Evidence | What it establishes | What it does not establish alone |
+|---|---|---|
+| Registry + OAuth association | Governed agent identity, lifecycle and credential association | A particular tool execution or automatic event correlation |
+| Human authentication event | Human sign-in and subject application | Which tool later ran |
+| Actor authentication event | Runtime client authentication; inspect agent fields where emitted | The whole human-to-tool chain |
+| STS event + delegated-token inspection | Token issuance, approved scope/context when present | Business operation success |
+| MCP/application diagnostics | Tool dispatch, boundary checks and result | A durable centralized audit trail; local stdout is transient |
+
+Use timestamps and actual client/user/token/correlation fields present in your tenant to correlate these records. Do not invent a shared transaction ID or promise that `AGENT_ID` appears in every event. <span style="color:red">TBD: attach sanitized UC2 human, actor, STS and AI activity event examples from your tenant, including the actual correlation fields and report names.</span>
+
+This package does not add a centralized audit service. For durable end-to-end auditing, persist structured MCP results with the correlation fields exposed by Verify. Keep tokens and secrets out of shared logs.
+
+## Add or change an MCP tool
+
+1. Define a typed function in `mcp_server.py` and decorate it with `@mcp.tool()`. FastMCP publishes its function name, parameters and description automatically.
+2. Route the function to `_execute()` so the shared protected boundary validates the delegated token before performing business work.
+3. Add the tool’s required scopes to `ACTION_SCOPE_MAP` in `mcp_gateway.py`, and implement its permitted operation in `_execute_tool_locally()`.
+4. Add the action and `toolName` to the ADT schema, and update intent parsing if the chat application should select it. Update the Verify ADT if its schema changed.
+5. Configure Verify’s consent mapping to grant only the intended scopes. Publishing a tool does not authorize it.
+6. Restart the application and verify `/mcp/tools`. All local tools require `mcp.tools.invoke` plus their business scope.
+
+`delete_course_history` is the worked example: it is published, its handler requires `course.delete`, and Verify’s supplied mapping intentionally withholds that scope. A custom tool also needs consistent `action`, `toolName`, audience and resource context.
+
+### Running without the tests folder
+
+The application does not import or discover `tests/`. This distribution omits that folder; deleting it from an older copy does not affect startup or tool calls. The offline checks were run separately during preparation.
 
 ## MCP tool registration and invocation
 
@@ -848,6 +1250,10 @@ def list_enrolled_courses(...):
 
 @mcp.tool()
 def enroll_course(...):
+    ...
+
+@mcp.tool()
+def delete_course_history(...):
     ...
 ```
 
@@ -972,58 +1378,20 @@ The business operation executes only after these checks pass.
 
 ## Complete source-level call flow
 
-```text
-app.py
-chat()
-  |
-  +--> llm_agent.py
-  |      decide_action(message)
-  |
-  +--> app.py
-  |      resolve_target_subject(...)
-  |
-  +--> rar_builder.py
-  |      build_agent_authorization_details(...)
-  |
-  +--> verify_oauth.py
-  |      get_actor_token()
-  |         +--> IBM Verify /oauth2/token
-  |
-  +--> verify_oauth.py
-  |      token_exchange(...)
-  |         +--> IBM Verify STS
-  |
-  +--> mcp_client.py                         [MCP CLIENT]
-         call_mcp_tool(...)
-           |
-           +--> ClientSession.initialize()
-           +--> session.list_tools()         [tools/list]
-           +--> session.call_tool(...)       [tools/call]
-                    |
-                    v
-              mcp_server.py                  [MCP SERVER]
-                 @mcp.tool()
-                 enroll_course(...)
-                    |
-                    v
-              mcp_gateway.py
-                 invoke_mcp_tool(...)
-                    |
-                    +--> _validate_mcp_invocation()
-                    |
-                    +--> _execute_tool_locally()
-                    |
-                    v
-                 MCP tool result
-                    |
-                    v
-              mcp_client.py
-                    |
-                    v
-              app.py -> build_answer()
-                    |
-                    v
-                 Human user
+```mermaid
+flowchart TD
+    H["app.py: chat"] --> I["llm_agent.py: decide action"]
+    I --> R["Resolve subject and build authorization details"]
+    R --> V["verify_oauth.py: actor token + Token Exchange"]
+    V --> C["mcp_client.py: initialize and discover tools"]
+    C --> Q{"Requested tool published?"}
+    Q -->|"No"| U["Unknown-tool denial"]
+    Q -->|"Yes"| M["MCP tools/call: registered server handler"]
+    M --> G["mcp_gateway.py: validate token and operation"]
+    G --> P{"Authorization passed?"}
+    P -->|"No"| D["Return scope or context denial"]
+    P -->|"Yes"| E["Execute permitted tool"]
+    E --> O["MCP result to application and user"]
 ```
 
 For a source-focused walkthrough, see:
@@ -1036,13 +1404,7 @@ docs/mcp-client-server-tool-flow.md
 
 This tutorial uses MCP STDIO because it makes the client/server relationship easy to run from one repository:
 
-```text
-mcp_client.py
-   |
-   | starts python mcp_server.py
-   v
-STDIO MCP connection
-```
+The MCP client starts `python mcp_server.py` as a local subprocess and connects over STDIO. Each call creates a fresh process; SQLite preserves enrollment writes between calls.
 
 The delegated token is included in the tool arguments so the server-side sample can validate IBM Verify context at the tool boundary.
 
@@ -1050,17 +1412,15 @@ For a **remote MCP server**, use an MCP HTTP transport and protect the HTTP reso
 
 A production remote architecture would look like:
 
-```text
-Conversational Agent / MCP Host
-          |
-          | MCP Client
-          | Authorization: Bearer <delegated token>
-          v
-Remote course-mcp-server
-          |
-          +--> validate IBM Verify access token
-          +--> tools/list
-          +--> tools/call
+```mermaid
+flowchart TD
+    H["Agent / MCP Host"] --> C["MCP HTTP client"]
+    C -->|"Authorization: Bearer delegated token"| B["Remote protected MCP boundary"]
+    B --> Q{"Token authorized?"}
+    Q -->|"No"| D["Deny HTTP request"]
+    Q -->|"Yes"| R{"MCP operation"}
+    R --> L["tools/list: discover tools"]
+    R --> T["tools/call: validate and execute tool"]
 ```
 
 Do not blindly copy the tutorial's `delegated_token` tool argument into a public remote MCP API. The local STDIO approach keeps the sample self-contained; a remote HTTP deployment should integrate bearer-token validation at the MCP HTTP resource boundary.
@@ -1069,13 +1429,13 @@ Do not blindly copy the tutorial's `delegated_token` tool argument into a public
 
 The IBM Verify token-exchange request should show:
 
-```text
-subject_token        -> human token
-actor_token          -> AI agent token
-audience              -> course-mcp-server
-authorization_details.operationDetails.action   -> selected action
-authorization_details.operationDetails.toolName -> selected MCP tool
-```
+| Request field | Meaning |
+|---|---|
+| `subject_token` | Human access token |
+| `actor_token` | AI agent access token |
+| `audience` | `course-mcp-server` |
+| `operationDetails.action` | Selected action |
+| `operationDetails.toolName` | Selected MCP tool |
 
 For enrollment:
 
@@ -1135,13 +1495,20 @@ The `/chat` route owns the user interaction and agent orchestration. It does not
 
 Its protected path is:
 
-```text
-prompt
- -> decide action
- -> build MCP authorization details
- -> actor token
- -> IBM Verify token exchange
- -> call_mcp_tool()
+```mermaid
+flowchart TD
+    H["app.py: chat"] --> I["llm_agent.py: decide action"]
+    I --> R["Resolve subject and build authorization details"]
+    R --> V["verify_oauth.py: actor token + Token Exchange"]
+    V --> C["mcp_client.py: initialize and discover tools"]
+    C --> Q{"Requested tool published?"}
+    Q -->|"No"| U["Unknown-tool denial"]
+    Q -->|"Yes"| M["MCP tools/call: registered server handler"]
+    M --> G["mcp_gateway.py: validate token and operation"]
+    G --> P{"Authorization passed?"}
+    P -->|"No"| D["Return scope or context denial"]
+    P -->|"Yes"| E["Execute permitted tool"]
+    E --> O["MCP result to application and user"]
 ```
 
 ### `mcp_client.py` — MCP Client
@@ -1173,11 +1540,11 @@ It creates:
 mcp = FastMCP("course-mcp-server")
 ```
 
-and exposes three `@mcp.tool()` functions.
+and exposes four `@mcp.tool()` functions.
 
 ### `mcp_gateway.py` — protected server-side execution boundary
 
-This module validates the IBM Verify delegated token context and compares the authorization details with the actual MCP tool invocation.
+This module verifies the delegated JWT with JWKS, then validates its context and compares the authorization details with the actual MCP tool invocation.
 
 It is called **from the MCP server tool handler**.
 
@@ -1200,13 +1567,21 @@ downstreamSystem = course-api
 
 This module implements:
 
-```text
-Authorization Code + PKCE
-Client Credentials actor token
-OAuth 2.0 Token Exchange
+```mermaid
+flowchart TD
+    B["Browser sign-in"] --> V["Verify: Authorization Code + PKCE"]
+    V --> ID["ID token"]
+    V --> AT["Subject access token: Default or JWT"]
+    ID --> Q{"Signature, issuer, audience and nonce valid?"}
+    Q -->|"Yes"| I["Logged-in human identity"]
+    Q -->|"No"| D["Reject login"]
+    AT --> STS["STS subject_token: access_token type"]
 ```
 
 ## Using Postman and Insomnia
+
+Follow [the complete setup and runtime walkthrough](docs/setup-and-api-walkthrough.md) for exact request order, variables, UI configuration, subject login, Token Exchange, introspection and lifecycle tests.
+
 
 ### IBM Verify setup collection
 
@@ -1330,11 +1705,13 @@ Do not restore a broad `STS_REQUESTED_SCOPE`. This version intentionally omits `
 
 Check the STS authorization-details mapping rule and confirm the delegated token contains exactly:
 
-```text
-list_available_courses -> mcp.tools.invoke course.read
-list_enrolled_courses  -> mcp.tools.invoke course.read
-enroll_course          -> mcp.tools.invoke course.enroll
-delete_course_history  -> mcp.tools.invoke
+```mermaid
+flowchart TD
+    A{"Requested action"} -->|"List available or enrolled"| R["Grant mcp.tools.invoke + course.read"]
+    A -->|"Enroll"| E["Grant mcp.tools.invoke + course.enroll"]
+    A -->|"Delete history"| D["Grant mcp.tools.invoke only"]
+    D --> M["Published delete handler"]
+    M --> X["Deny: required course.delete is missing"]
 ```
 
 ### Actor token fails
